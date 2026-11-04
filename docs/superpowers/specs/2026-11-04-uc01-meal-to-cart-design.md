@@ -75,12 +75,12 @@ Logical overview below; **[DATA_CONTRACT.md](../../DATA_CONTRACT.md) is authorit
 
 | Contract | Required fields | Invariants |
 | --- | --- | --- |
-| `MealRequest` | `request_id`, `diners` (positive int), `budget_vnd` (nonnegative integer), `meal_type`, `dislikes[]`, `allergens[]`, `dietary_restrictions[]`, `pantry[]`, `conversation_revision` | Constraints on shared dishes are cumulative; an allergen reported for **any** diner applies to every shared dish. Pantry entries require `ingredient_id`, quantity, unit, food form and user confirmation; allergy evidence is tracked separately from quantity confirmation. |
-| `Recipe` | `recipe_id`, `version`, `title`, `base_servings`, `ingredients[]`, `tags[]`, `source_ref` | Each ingredient includes `ingredient_id`, raw quantity, canonical unit and food form, including sauces/seasonings; missing quantity or incomplete known component list blocks verified planning. |
+| `MealRequest` | `request_id`, `diners`, `budget_vnd`, `allergens[]`, `pantry[]`, `conversation_revision`, other constraints | Allergens are canonical IDs per diner, combined for shared dishes. Each pantry item has stable `pantry_item_id`, quantity and independent food evidence. |
+| `Recipe` | `recipe_id`, `version`, `title`, `base_servings`, `ingredients[]`, `tags[]`, `source_ref` | Recipe components have version-scoped `component_id`; ingredient/seasoning completeness required. |
 | `PlannedDish` | `recipe_id`, `recipe_version`, `target_servings`, `serving_role` (shared dish / main course / side dish) | Scaling uses **explicit target servings per selected dish**, not automatically `diners` for every recipe. Each dish declares its intended contribution to the meal; multi-dish portion policy requires review. |
 | `Ingredient` | `ingredient_id`, `canonical_name`, `aliases[]`, `measurement_dimension` | Conversions allowed only within compatible dimensions or via explicit preparation/yield factor |
 | `ProductSKU` | `sku`, `ingredient_id`, `pack_quantity`, `pack_unit`, `price_vnd_per_pack`, `stock_packs`, `catalog_snapshot_id`, `food_evidence_ref` | One SKU satisfies one ingredient demand in UC-01; price and stock are values for sellable packs in the referenced store snapshot. |
-| `FoodEvidence` | `evidence_id`, `subject_type` (`recipe_component` / `sku` / `pantry_item`), `subject_ref`, `declared_allergens[]`, `cross_contact_status`, `source_ref`, `evidence_revision` | Covers recipe, product and pantry risks. Traceable cross-contact assessments are evidence states, not medical-safety certificates; missing warnings do not establish absence. |
+| `FoodEvidence` | `evidence_id`, typed `subject_ref`, `ingredient_statement`, per-`allergen_id` `allergen_assessments[]`, `source_ref`, `evidence_revision` | Per-allergen ingredient presence and cross-contact require independent evidence; absent/missing assessment stays UNKNOWN, never a medical-safety certification. |
 | `CatalogSnapshot` | `snapshot_id`, `store_id`, `observed_at`, `price_valid_until`, `stock_valid_until`, `source_ref` | Facts share one store snapshot and pass `observed_at <= as_of < valid_until`; stale/missing validity becomes `DATA_UNAVAILABLE`. |
 | `CartLine` | `ingredient_id`, `required_qty`, `pantry_qty`, `buy_qty`, `sku`, `packs`, `price_per_pack_vnd`, `line_total_vnd`, `evidence_refs[]` | `buy_qty = max(0, required_qty - confirmed_pantry_qty)`; pack quantity covers buy_qty |
 | `DraftCart` | `cart_id`, `request_revision`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `verification_status`, `problems[]`, `snapshot_id`, `user_review_state` | Verification and explicit user acceptance are distinct. `ACCEPTED` requires a currently verified draft and is not an order. |
@@ -139,7 +139,7 @@ Use one orchestration flow initially, not a predeclared army of agents. Superpow
 
 | ID | Input | Required observed behavior |
 | --- | --- | --- |
-| AC01 | Dinner for 4, 300k VND | Menu & cart cover servings and verified pack subtotal <= budget **or** explicit infeasible outcome |
+| AC01 | Fixed positive fixture §11: 4 diners, 140,000 VND, snapshot S-FG-001 | Must be `VERIFIED`, 5 purchased lines/6 packages, exactly 116,000 VND; unconditional `INFEASIBLE` **fails**. |
 | AC02 | Avoid spicy food | No verified menu with known spicy dish; ambiguous seasoning clarified |
 | AC03 | One diner allergic to shrimp | Reject known shrimp-containing recipes/SKUs; unknown label/cross-contact → REVIEW_REQUIRED, no safety assurance |
 | AC04 | Have 200 g rice and unspecified oil | Deduct only 200 g rice; clarify or retain oil quantity, never assume all oil on hand |
@@ -147,7 +147,7 @@ Use one orchestration flow initially, not a predeclared army of agents. Superpow
 | AC06 | Need 600 g, 500 g pack at 75k | Two packages, 150k before pantry; insufficient stock blocks that SKU |
 | AC07 | “Đổi món thịt sang cá, giữ ngân sách” | Replace dish, recompute from sources, retain all other active constraints |
 | AC08 | User accepts currently verified draft | Change `user_review_state` to `ACCEPTED` only when `verification_status=VERIFIED`; cannot create order or payment. Unknown allergy evidence blocks acceptance. |
-| AC09 | Conflicting/no feasible request | Explicit INFEASIBLE reasons and permitted next actions, not fabricated compliance |
+| AC09 | Fixed 140,000 VND fixture with G-TOM500 price raised to 50,000 VND | Candidate `INFEASIBLE` with BUDGET_EXCEEDED (148,000 VND); bounded search exhaustion reports NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET, not global impossibility. |
 | AC10 | Price/stock changes after draft | Snapshot mismatch → revalidation before any future confirmed order |
 | AC11 | Recipe uses cooked vs raw form without yield data | Cannot assert quantity match; ask/mark data unavailable |
 | AC12 | Same ingredient in two recipes | Aggregate once and apply package rounding **after** aggregation |
