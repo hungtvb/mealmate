@@ -191,29 +191,33 @@ The ShopMate archive is a reference, not an approved source dependency. Verify o
 5. Confirm the default shared-meal portion policy (main + side dishes) and that recipes/condiments/pantry inputs must each be assessed for declared allergies.
 6. Confirm one-store `CatalogSnapshot` with explicit fact expiry and separate, non-overridable review for unresolved allergen evidence.
 
-## 11. Worked data fixture (proposed test oracle)
+## 11. Golden fixture: positive deterministic test vector (synthetic)
 
-This is a **design example only**—the catalog/recipes do not yet exist in the application. All amounts are illustrative, not nutritional or medical guidance.
+**Fixture ID:** F-UC01-POS. This is fictional test data, not a live catalog, recipe validation or medical assurance. **Expected:** VERIFIED, five purchased SKU lines / six packages, 116,000 VND and no observed constraint blockers. An implementation returning INFEASIBLE always fails AC01.
 
-**Request:** four diners, budget 140,000 VND, already have 500 g dry rice and 100 g tomatoes, no declared allergies or special diet. **For this fixture only**, each of the four recipes is already portioned as a shared dish serving this household of four. The sample is an explicit `PlannedDish` selection, **not** the general rule that all dishes always need four full servings.
+**Request:** `request_id=REQ-001`, `conversation_revision=1`, four diners, budget 140,000 VND, dinner, `allergens=[]`, `dislikes=[]` and no dietary restrictions. Pantry: `P01` 500 g dry rice, `P02` 100 g tomatoes, `P03` 3000 ml water, with quantities confirmed. These are user statements, not independent health assessments.
 
-| Recipe ID | Dish | Required ingredients |
+**Snapshot:** `store_id=FG-01`, `snapshot_id=S-FG-001`, `source_ref=fixture:grocery/FG-01`, `source_revision=stock-price-v1`, `observed_at=2026-11-04T06:00:00Z`, `price_valid_until=2026-11-04T08:00:00Z`, `stock_valid_until=2026-11-04T06:30:00Z`, `as_of=2026-11-04T06:10:00Z`. All sellable SKU rows below use this snapshot, its source revision and integer VND prices.
+
+**Recipes:** All four are `version=v1`, `base_servings=4`, `target_servings=4`, `data_completeness=COMPLETE`, with `source_ref=fixture:recipe/<recipe_id>@v1`; each `PlannedDish` has `portion_rationale=shared household dish`. Each listed ingredient is complete for this narrowly curated sample: there are **no unlisted seasonings, sauces or cooking inputs**. Water is included explicitly for cooking and supplied by the pantry.
+
+| Recipe | Role | Complete RecipeIngredient lines (stable component IDs) |
 | --- | --- | --- |
-| R01 | Cơm trắng | dry rice 400 g |
-| R02 | Trứng chiên cà chua | egg 4 pieces, tomato 300 g, cooking oil 20 mL |
-| R03 | Canh đậu phụ cà chua | tomato 200 g, tofu 400 g |
-| R04 | Rau cải luộc | greens 400 g |
+| R01 Cơm trắng | side | c01 dry rice 400 g; c02 water 600 ml |
+| R02 Trứng chiên cà chua | main | c01 eggs 4 pcs; c02 tomatoes 300 g; c03 cooking oil 20 ml |
+| R03 Canh đậu phụ cà chua | side | c01 tomatoes 200 g; c02 tofu 400 g; c03 water 800 ml |
+| R04 Rau cải luộc | side | c01 greens 400 g; c02 water 800 ml |
 
-**Candidate catalog snapshot** (all packs in stock, all prices and timestamps present; no competing candidate SKUs):
+**Store catalog:** Every listed SKU has one canonical ingredient mapping and `food_evidence_ref=FE-<sku>`. Stock is measured in sellable packages; snapshots and sources are as defined above.
 
-| SKU | Sellable pack | Price/pack | Available packs |
-| --- | --- | ---: | ---: |
-| G-RICE1000 | dry rice 1,000 g | 26,000 VND | 5 |
-| G-EGG10 | eggs 10 pieces | 30,000 VND | 3 |
-| G-TOM500 | tomatoes 500 g | 18,000 VND | 5 |
-| G-OIL500 | cooking oil 500 mL | 28,000 VND | 3 |
-| G-TOFU200 | tofu 200 g | 12,000 VND | 5 |
-| G-GREEN500 | greens 500 g | 16,000 VND | 3 |
+| SKU | ingredient_id | Pack | Price (VND) | Stock packs |
+| --- | --- | --- | ---: | ---: |
+| G-RICE1000 | rice | dry rice 1000 g | 26,000 | 5 |
+| G-EGG10 | eggs | eggs 10 pcs | 30,000 | 3 |
+| G-TOM500 | tomato | tomatoes 500 g | 18,000 | 5 |
+| G-OIL500 | oil | cooking oil 500 ml | 28,000 | 3 |
+| G-TOFU200 | tofu | tofu 200 g | 12,000 | 5 |
+| G-GREEN500 | greens | greens 500 g | 16,000 | 3 |
 
 **Expected deterministic outcome:**
 
