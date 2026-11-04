@@ -53,9 +53,9 @@ Aggregate ingredient requirements only when identity, dimension and food form ma
 
 ### ProductSKU
 
-`sku`, `ingredient_id`, `pack_quantity`, `pack_unit`, `price_vnd_per_pack`, `stock_packs`, `catalog_snapshot_id`, `food_evidence_ref`.
+`sku`, `ingredient_id`, `food_form`, `pack_quantity`, `pack_unit`, `price_vnd_per_pack`, `stock_packs`, `catalog_snapshot_id`, `food_evidence_ref`.
 
-One SKU represents **one ingredient demand** in UC-01; mixed food bundles and one SKU allocated across different canonical ingredient demands are unsupported. The mapping is reviewed, not inferred from product naming. `stock_packs` is an integer count of **sellable packs**, not ingredient mass.
+One SKU represents **one ingredient demand** in UC-01; mixed food bundles and one SKU allocated across different canonical ingredient demands are unsupported. Matching recipe and pantry requirements to products requires identical canonical `ingredient_id`, compatible `food_form` and convertible quantity units with explicit factors. Never join by display name or label text. The mapping is reviewed; `stock_packs` is an integer count of **sellable packs**, not ingredient mass. An ingredient already fully covered by confirmed pantry stock does not require a SKU in the cart.
 
 ### CatalogSnapshot
 
