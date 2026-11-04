@@ -155,9 +155,15 @@ Use one orchestration flow initially, not a predeclared army of agents. Superpow
 | AC14 | One combo SKU appears eligible for two distinct ingredient demands | Reject unsupported cross-ingredient allocation; never count one package twice or double-charge stock |
 | AC15 | Declared allergy; processed seasoning or pantry item has unknown evidence | Preserve `REVIEW_REQUIRED`; never treat recipe or pantry as automatically safe |
 | AC16 | Stale stock and incompatible ingredient in the same candidate | Preserve both reason codes with evidence; never return a verified cart |
+| AC17 | Two allergens SHRIMP + PEANUT: tomato SKU has SHRIMP assessed absent, PEANUT cross-contact UNKNOWN | Return REVIEW_REQUIRED for PEANUT; SHRIMP evidence cannot clear PEANUT; no VERIFIED or ACCEPTED. |
+| AC18 | Two pantry rice packages and recipe R02 updated from v1 to v2 | Distinct pantry_item_id and version-scoped recipe component evidence; no evidence reused across mismatched identities. |
+| AC19 | Verified at 06:10Z, customer accepts after stock expiry at 06:31Z | Atomic acceptance check rejects stale VERIFIED and requires refreshed re-verification and renewed user confirmation. |
+| AC20 | User edits budget/recipe to request_revision=2 and clicks old draft revision=1 | Compare-and-swap fails, old acceptance blocked and verification invalidated. |
+| AC21 | Allergy declared and a pantry item's label/evidence unknown | Priced provisional SKU list permitted with warnings; whole meal cannot be VERIFIED/ACCEPTED; customer acknowledgment is not safety clearance. |
+| AC22 | No allergens declared with full current catalog and recipe data | Economic/portion/cart checks can be VERIFIED, but UI states “no allergens assessed” and does not promise allergy safety. |
 
 ### Demonstration set (synthetic; not production evidence)
-Construct a tiny but coherent fixture: 8-12 recipes, 20-40 SKUs, clear price/stock snapshots, explicit ingredient and allergen evidence. Include positive, impossible-budget, missing-label and stale-stock cases. This is a **proposed test design**, not data already created.
+Start from the **pinned six-SKU fixture in §11**; grow beyond it only to cover a named acceptance scenario. For allergy tests use per-allergen evidence; the no-allergy golden case does not claim medical safety. Include positive, impossible-budget, missing-label and stale-stock cases. This is a **proposed test design**, not data already created.
 
 ### Evidence gate
 Before approving UC-01 implementation, require: defined data contracts, fixed test oracles, a deterministically reproducible cart example, negative allergy cases, and clear criteria for live LLM evaluation. Later classify test evidence as unit, integration, E2E or human review. No fabricated PASS rates.
@@ -261,8 +267,11 @@ This example checks a key invariant: tomatoes used in two recipes are **aggregat
 **Controlled negative variations:**
 - If G-TOFU200 stock falls from 5 to **1**, the two-pack tofu line cannot be marked verified. Try a separately evidenced available alternative; otherwise surface `INFEASIBLE`.
 - If G-TOM500 price changes from **18,000** to **50,000 VND**, the unchanged basket totals **148,000 VND** and exceeds the 140,000 VND cap. Replan or return `INFEASIBLE`; never keep the old subtotal.
-- If a shopper declares **shrimp allergy** and G-TOFU200 has `cross_contact_status=UNKNOWN` or no trusted ingredient label, return `REVIEW_REQUIRED`; do **not** mark tofu or the whole menu allergen-safe. Request reliable label/vendor confirmation or select another evidenced product.
+- **Two-allergen fixture (AC17):** Declare `SHRIMP` and `PEANUT`. For all otherwise used recipe/pantry/SKU subjects, provide synthetic per-allergen `(ingredient_presence=ABSENT, cross_contact_status=ASSESSED_ABSENT)` records with source/scope **except** `FE-G-TOM500`, which has `SHRIMP=(ABSENT, ASSESSED_ABSENT)` but `PEANUT=(ABSENT, UNKNOWN)`. Result: `REVIEW_REQUIRED` for PEANUT, never VERIFIED; these mock records test logic, not real-world safety.
 - If `as_of` is at or beyond the snapshot's `stock_valid_until` or `price_valid_until`, return `DATA_UNAVAILABLE` until authoritative refresh. Snapshot validity is a documented data contract, not an invented global TTL.
+- **Identity (AC18):** Add pantry rice package `P04` alongside `P01` and revise tomato component `(R02,v1,c02)` to `(R02,v2,c02)`. Each item must have its own evidence record; v1 evidence cannot authorize v2.
+- **Acceptance race (AC19–20):** After verification at 06:10Z, an attempted acceptance at 06:31Z fails on expired stock; changing the request to revision 2 also rejects a revision 1 acceptance. No stale cart transitions to `ACCEPTED`.
+- **Pantry boundary (AC21):** With declared allergy and missing label/evidence on `P01`, the priced list can be displayed provisionally, but the whole meal remains REVIEW_REQUIRED until the ingredient is replaced/removed or reliable evidence is provided; acknowledgment cannot resolve it.
 
 ### Minimum fixture review gate
 
