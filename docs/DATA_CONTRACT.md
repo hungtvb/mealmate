@@ -33,7 +33,7 @@ The fields below describe required meaning, not a commitment to separate SQL tab
 
 `request_id`, `conversation_revision`, `diners` (>0), `meal_type`, `budget_vnd` (>0 for budget-constrained flow), `dislikes[]`, `allergens[]`, `dietary_restrictions[]`, `pantry[]`.
 
-`pantry[]` entries: `ingredient_id`, `quantity`, `unit`, `food_form`, `quantity_confirmed` and an optional `food_evidence_ref`. Quantity confirmation **does not** establish allergen safety. Unknown pantry quantity is not automatically deducted. Missing diners/budget triggers clarification rather than invention. Specific illness-related limits must be provided as restrictions; do not infer from a diagnosis.
+`pantry[]` entries: stable `pantry_item_id` (unique within `request_id`, preserved across revisions for the same physical item), `ingredient_id`, `quantity`, `unit`, `food_form`, `quantity_confirmed` and optional `food_evidence_ref`. Two packages of the same food receive **different** `pantry_item_id` values. Quantity confirmation **does not** establish allergen safety. Unknown pantry quantity is not automatically deducted. Missing diners/budget triggers clarification rather than invention. Specific illness-related limits must be provided as restrictions; do not infer from a diagnosis.
 
 **Revision rule:** Each new user turn updates only named constraints, retains all others (including declared allergies), increments `conversation_revision` and invalidates any old cart verification result.
 
@@ -41,7 +41,7 @@ The fields below describe required meaning, not a commitment to separate SQL tab
 
 `Recipe`: `recipe_id`, `version`, `title`, `base_servings` (>0), `ingredients[]`, `source_ref`, `data_completeness`.
 
-`RecipeIngredient`: `ingredient_id`, `quantity`, `unit`, `food_form`; sauces, spice mixtures and other processed ingredients are explicitly represented. A `data_completeness` failure excludes the recipe from a verified cart, not necessarily from a clearly labeled exploratory suggestion.
+`RecipeIngredient`: stable `component_id` (unique within a `recipe_id + version`), `ingredient_id`, `quantity`, `unit`, `food_form`; sauces, spice mixtures and other processed ingredients are explicitly represented. References use the **versioned composite** `(recipe_id, recipe_version, component_id)`; a change to recipe contents creates a new version and evidence cannot silently follow it. A `data_completeness` failure excludes the recipe from a verified cart, not necessarily from a clearly labeled exploratory suggestion.
 
 `PlannedDish`: `recipe_id`, `recipe_version`, `target_servings`, `serving_role` (main/side/shared), `portion_rationale`. Ingredient need = `recipe_ingredient.quantity × target_servings / base_servings`. A four-person meal with three dishes **does not** imply three independent four-serving full meals; the chosen targets must be recorded and reviewable.
 
@@ -65,15 +65,26 @@ A cart's selected SKU price and stock facts must refer to the **same logical sto
 
 At verification instant `as_of`, require `observed_at <= as_of < price_valid_until` and `observed_at <= as_of < stock_valid_until`. If either validity window is missing/expired, return `DATA_UNAVAILABLE` and request authoritative refresh. **No arbitrary universal TTL is assumed.** Drafts are reverified against a new snapshot before future order submission.
 
-### FoodEvidence (replaces SKU-only IngredientEvidence)
+### FoodEvidence (allergen-specific, versioned)
 
-`evidence_id`, `subject_type` (`recipe_component` / `sku` / `pantry_item`), `subject_ref`, `declared_allergens[]`, `ingredient_statement` (or explicit unknown), `cross_contact_status` (`KNOWN_PRESENT`, `ASSESSED_ABSENT`, `UNKNOWN`), `source_ref`, `evidence_revision`, `assessed_at`, `assessment_scope`.
+`FoodEvidence`: `evidence_id`, `subject_type` (`recipe_component` / `sku` / `pantry_item`), `subject_ref`, `ingredient_statement` (or explicit unknown), `allergen_assessments[]`, `source_ref`, `evidence_revision`, `assessed_at`.
 
-- `KNOWN_PRESENT`: verified known risk/incompatibility for a declared allergen → **reject that candidate**.
-- `UNKNOWN`: absent/ambiguous label, missing supplier evidence, unassessed cross-contact or pantry ingredient without adequate evidence → `REVIEW_REQUIRED`.
-- `ASSESSED_ABSENT`: **only** an assessment by a traceable qualified source for a specified allergen/product and scope; absence of a `may contain` warning **is not** enough. This is not a medical guarantee.
-- Check recipe components, sauces, product labels and confirmed pantry foods against the **union** of allergies declared for all diners sharing the meal.
-- Never display “an toàn cho người dị ứng” based solely on this model. Home kitchen/utensil cross-contact lies outside the catalog contract and should be disclosed as a limitation.
+`subject_ref` is typed and unambiguous:
+- Recipe: `(recipe_id, recipe_version, component_id)`; recheck when recipe version changes.
+- SKU: `(store_id, sku, catalog_snapshot_id)` plus the label/evidence revision; do not reuse evidence from a different formulation or product.
+- Pantry: `(request_id, pantry_item_id)`, with the specific user-supplied food/package and evidence revision. Two pantry packs never share an item reference just because they have the same ingredient ID.
+
+**Allergen taxonomy:** `MealRequest.allergens[]` contains canonical `allergen_id` values, resolved from user aliases with clarification on ambiguity; examples for *synthetic tests only*: `SHRIMP`, `PEANUT`. Substances not confidently mapped remain unresolved; they are never silently dropped. Each `allergen_assessments[]` item has `allergen_id`, `ingredient_presence` (`PRESENT` / `ABSENT` / `UNKNOWN`), `cross_contact_status` (`KNOWN_PRESENT` / `ASSESSED_ABSENT` / `UNKNOWN`), `assessment_scope`, `source_ref`, `assessed_at`. Do not combine these into one unscoped scalar.
+
+For **each declared allergen, for each relevant subject**, independently evaluate ingredient presence and cross-contact:
+- `ingredient_presence=PRESENT` or `cross_contact_status=KNOWN_PRESENT` → reject the candidate as `INFEASIBLE` for that ingredient.
+- `ingredient_presence=UNKNOWN`, `cross_contact_status=UNKNOWN`, or **missing that allergen's assessment entirely** → `REVIEW_REQUIRED`; one assessed allergen never clears another.
+- Both `ingredient_presence=ABSENT` and `cross_contact_status=ASSESSED_ABSENT`, from appropriately scoped, traceable evidence → clears the **documented data checks for that allergen and subject only**, not medical risk. An empty label, absence of a `may contain` warning or a user's acknowledgment is not affirmative evidence.
+- With **no declared allergens**, allergen-specific assessments are not a precondition to verifying *non-allergen* cart constraints; the result must say **"no allergens were assessed"**, not "allergen-safe".
+
+Check complete recipe ingredients (including sauces and seasonings), selected SKUs and pantry foods involved in the chosen meal against the union of allergies declared for all diners sharing the meal. Home kitchen handling and utensil cross-contact are **outside** this retailer-data check.
+
+**Pantry usability boundary (proposed):** The system can show a **priced, stock-checked provisional shopping list** separately from the status of the **whole meal plan**. If a relied-upon pantry item's allergen evidence is unknown, the whole meal/draft cannot become `VERIFIED` or `ACCEPTED`, but the UI must identify the one unresolved pantry item rather than hide other valid cart facts. Resolution requires reliable product/pack evidence for that allergen, replacing the pantry item with a separately assessed SKU, or removing/substituting the recipe component. A user's "I understand" is never a safety override. The app cannot certify home preparation as safe.
 
 Allergy details should remain in the active conversation by default, without long-term persistence unless separately consented and governed.
 
@@ -85,7 +96,7 @@ Allergy details should remain in the active conversation by default, without lon
 
 `buy_qty = max(0, required_qty - confirmed_pantry_qty)` after compatible unit conversion. If `buy_qty = 0`, no SKU line should be purchased (but recipe/allergen evidence still applies to pantry food). Otherwise `packs = ceil(buy_qty / pack_quantity)`; require `packs <= stock_packs`.
 
-`DraftCart`: `cart_id`, `request_revision`, `planned_dishes[]`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `snapshot_id`, `verified_at`, `verification_status`, `problems[]`, `user_review_state`.
+`DraftCart`: `cart_id`, `revision`, `request_revision`, `planned_dishes[]`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `snapshot_id`, `verified_at`, `verification_status`, `problems[]`, `user_review_state`, `accepted_at?`. Verification is scoped to cart revision, request revision, recipe/evidence versions and catalog snapshot.
 
 `subtotal_vnd = Σ(line.packs × line.price_per_pack_vnd)`; only charge actual **purchasable packages**, including unused leftovers. Require `subtotal_vnd <= budget_vnd` for `VERIFIED`.
 
@@ -93,7 +104,9 @@ Allergy details should remain in the active conversation by default, without lon
 - `verification_status`: `VERIFIED`, `REVIEW_REQUIRED`, `INFEASIBLE`, `DATA_UNAVAILABLE` (describes checks for this evaluated candidate/snapshot, **not proof about all possible menus**).
 - `user_review_state`: `DRAFT`, `ACCEPTED`, `REJECTED`. UC-01 permits `ACCEPTED` only for a currently `VERIFIED` draft and explicit user action. `REVIEW_REQUIRED` is view/edit/clarify only: acknowledgment is **not** a safety clearance. `ACCEPTED` is **not an order**.
 
-On stale snapshot or any request edit, invalidate old `verification_status`, clear any old acceptance, recalculate and re-check.
+**Acceptance-time verification (TOCTOU):** At the instant a customer accepts (`as_of_accept`), perform a **single atomic conditional update** (transaction or optimistic compare-and-swap) that checks the current `request_revision`, `DraftCart.revision`, previously verified recipe/evidence revisions, unchanged snapshot/source revision and `observed_at <= as_of_accept < price_valid_until` and `stock_valid_until` for every selected SKU. Re-evaluate required quantity/price/stock and unresolved food-evidence blockers. Only then transition `DRAFT → ACCEPTED`. Any stale/mismatched fact causes **no acceptance**, invalidates the prior result, refreshes/recalculates and asks for renewed confirmation; never silently accept a changed cart. This is **not a stock reservation** and does not guarantee availability after acceptance or authorize an order.
+
+On stale snapshot or any request/cart edit, invalidate old `verification_status`, clear any old acceptance, recalculate and re-check. A user's acknowledgment of uncertainty cannot bypass the acceptance gate.
 
 ## 4. Verifier output and partial search
 
@@ -101,7 +114,7 @@ Store **all** known issues in `problems[]`, not merely one string:
 
 `{ code, subject_type, subject_ref, evidence_ref?, severity, next_action }`
 
-Examples: `SKU_OUT_OF_STOCK`, `PRICE_EXPIRED`, `UNKNOWN_CROSS_CONTACT`, `KNOWN_ALLERGEN_PRESENT`, `PANTRY_QUANTITY_UNKNOWN`, `UNIT_CONVERSION_MISSING`, `BUDGET_EXCEEDED`, `DUPLICATE_SKU_ALLOCATION`.
+Examples: `SKU_OUT_OF_STOCK`, `PRICE_EXPIRED`, `UNKNOWN_CROSS_CONTACT`, `ALLERGEN_ASSESSMENT_MISSING`, `KNOWN_ALLERGEN_PRESENT`, `PANTRY_QUANTITY_UNKNOWN`, `UNIT_CONVERSION_MISSING`, `BUDGET_EXCEEDED`, `DUPLICATE_SKU_ALLOCATION`, `ACCEPTANCE_REVISION_CONFLICT`. Allergen-related problems also identify the relevant `allergen_id`.
 
 The primary `verification_status` is a summary; no unresolved hard errors may coexist with `VERIFIED`. For multiple blockers, report all and avoid a misleading single cause. A rejected **candidate** is `INFEASIBLE` for its own constraints. After trying at most three candidate menus, the conversation outcome is **NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET**, not a claim that no possible menu exists. This conversation outcome is distinct from the cart's verification status.
 
@@ -112,7 +125,7 @@ The canonical UC-01 spec contains the small four-dish example, pack prices and f
 The corresponding expected invariants are:
 
 - Tomato amounts from two dishes aggregate **before** pantry subtraction and package rounding.
-- Pantry rice can fulfill a requirement without purchasing rice, but does not exempt that recipe component from declared-allergen checks.
+- Pantry rice can fulfill a requirement without purchasing rice, but does not exempt that recipe component from declared-allergen checks. The paid basket may be priced correctly while the overall meal remains `REVIEW_REQUIRED` due to a specific pantry item's unknown evidence.
 - A single bundle/SKU cannot be double-counted across different canonical ingredient demands.
 - If a price changes or a new snapshot expires, the old cart loses `VERIFIED`; never keep a stale subtotal.
 - If pantry quantity is unknown, seek clarification or plan a conservative *purchased* quantity without asserting pantry coverage; do not represent unknown as zero confirmed stock.
@@ -124,9 +137,9 @@ The smallest accepted fixture must include:
 
 - Curated full recipe ingredients (including seasoning where applicable), explicit `PlannedDish` targets and ingredient units/forms.
 - One-store SKU/pack/price/stock snapshot with consistent UTC validity windows and source revisions.
-- Known-positive, known-incompatible and unknown allergen evidence for recipe, SKU and pantry contexts.
+- Per-allergen, traceable ingredient-presence and cross-contact evidence for recipe, SKU and pantry contexts; include a **two-allergen** case where `SHRIMP` is assessed absent but `PEANUT` is unknown on the same SKU.
 - At least one example with two dishes sharing an ingredient, one unknown pantry quantity, one cross-form conversion failure, one expired snapshot and one changed price.
-- Reproducible `as_of` and asserted expected cart line amounts/statuses; verify against the UC-01 acceptance matrix before implementing runtime.
+- Reproducible `as_of` plus **acceptance-time** expiry/revision checks, a duplicate pantry-item case and changed recipe version case, and asserted cart line amounts/statuses; verify against the UC-01 acceptance matrix before implementing runtime.
 
 ## 7. Questions reserved for product review
 
