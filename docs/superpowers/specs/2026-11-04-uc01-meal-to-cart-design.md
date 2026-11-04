@@ -79,7 +79,7 @@ flowchart TD
   W -- No --> X{Any cart-data-VERIFIED candidate?}
   X -- No --> Y[NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET]
   X -- Yes --> Z[NO_ACCEPTABLE_CART_IN_EVALUATED_SET]
-  U --> Q
+  U --> F
 ```
 
 **Candidate bound:** `max_evaluated_candidates=3` **total**, including the first proposal and at most two alternatives. Never interpret this as three retries *after* the first attempt, and never loop after exhaustion. This is the current proposed bounded-search policy (AC23), not a claim of global infeasibility. The fallback UX when candidates fail budget/stock is a **separate business decision not yet approved**. A changed meal request starts a fresh proposal; a read-only explanation does not mutate the request or reset the candidate budget. Candidate-level cart verification is distinct from purchased-SKU allergen **acceptability**: the former can pass while the latter blocks acceptance (approved SKU Option A). An unknown **pantry** allergen alone permits explicit acceptance with visible warning (approved pantry Option B). Confirmation always rechecks current evidence and catalog facts, without placing an order.
