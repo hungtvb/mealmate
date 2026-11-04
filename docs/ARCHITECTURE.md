@@ -1,6 +1,6 @@
 # Architecture Direction (proposed)
 
-**Not yet an implementation specification.** Design choices must be justified by UC-01.
+**Not yet an implementation specification.** Design choices must be justified by [UC-01](UC-01.md); logical field semantics and verification rules live in the [UC-01 Data Contract](DATA_CONTRACT.md).
 
 ## Logical responsibilities
 1. Conversational intake — interpret requests, preserve explicit constraints and manage clarification.
