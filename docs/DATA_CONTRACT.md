@@ -1,6 +1,6 @@
 # UC-01 — Grocery Data Contract & Verification
 
-**Status:** PROPOSED — requires UC-01 design sign-off; no implementation authorized.  
+**Status:** PROPOSED — requires UC-01 design sign-off; **pantry/allergen separation (Option B) approved as a product decision**; no implementation authorized.  
 **Source design:** [UC-01](superpowers/specs/2026-11-04-uc01-meal-to-cart-design.md) · [Issue #2](https://github.com/hungtvb/mealmate/issues/2)
 
 ## 1. Purpose and boundary
@@ -84,7 +84,7 @@ For **each declared allergen, for each relevant subject**, independently evaluat
 
 Check complete recipe ingredients (including sauces and seasonings), selected SKUs and pantry foods involved in the chosen meal against the union of allergies declared for all diners sharing the meal. Home kitchen handling and utensil cross-contact are **outside** this retailer-data check.
 
-**Pantry usability boundary (proposed):** The system can show a **priced, stock-checked provisional shopping list** separately from the status of the **whole meal plan**. If a relied-upon pantry item's allergen evidence is unknown, the whole meal/draft cannot become `VERIFIED` or `ACCEPTED`, but the UI must identify the one unresolved pantry item rather than hide other valid cart facts. Resolution requires reliable product/pack evidence for that allergen, replacing the pantry item with a separately assessed SKU, or removing/substituting the recipe component. A user's "I understand" is never a safety override. The app cannot certify home preparation as safe.
+**Approved product boundary — Option B (2026-11-04):** Cart purchase-data verification is **independent** from the meal's allergy assessment. If the user's pantry item lacks allergen evidence, display the specific warning and still allow the user to **accept a cart that independently passes pack, budget, price, stock and snapshot checks**, after showing the limitation. The meal retains `meal_allergen_status=REVIEW_REQUIRED`; neither accepting the cart nor acknowledging the warning changes this status or asserts allergy suitability. Known incompatible recipe components or selected products are a different case: **reject that meal candidate** and do not present it as an allergen-compliant suggestion. Food preparation, utensils and home cross-contact remain outside MealMate's verification boundary.
 
 Allergy details should remain in the active conversation by default, without long-term persistence unless separately consented and governed.
 
@@ -96,17 +96,18 @@ Allergy details should remain in the active conversation by default, without lon
 
 `buy_qty = max(0, required_qty - confirmed_pantry_qty)` after compatible unit conversion. If `buy_qty = 0`, no SKU line should be purchased (but recipe/allergen evidence still applies to pantry food). Otherwise `packs = ceil(buy_qty / pack_quantity)`; require `packs <= stock_packs`.
 
-`DraftCart`: `cart_id`, `revision`, `request_revision`, `planned_dishes[]`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `snapshot_id`, `verified_at`, `verification_status`, `problems[]`, `user_review_state`, `accepted_at?`. Verification is scoped to cart revision, request revision, recipe/evidence versions and catalog snapshot.
+`DraftCart`: `cart_id`, `revision`, `request_revision`, `planned_dishes[]`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `snapshot_id`, `verified_at`, `cart_verification_status`, `meal_allergen_status`, `problems[]`, `user_review_state`, `accepted_at?`. Verification is scoped to cart/request revision and catalog snapshot; recipe/evidence revisions are tracked separately for meal-allergen warnings.
 
-`subtotal_vnd = Σ(line.packs × line.price_per_pack_vnd)`; only charge actual **purchasable packages**, including unused leftovers. Require `subtotal_vnd <= budget_vnd` for `VERIFIED`.
+`subtotal_vnd = Σ(line.packs × line.price_per_pack_vnd)`; charge actual purchasable packages including unused remainders. Require `subtotal_vnd <= budget_vnd` for `cart_verification_status=VERIFIED`.
 
-**Two independent states:**
-- `verification_status`: `VERIFIED`, `REVIEW_REQUIRED`, `INFEASIBLE`, `DATA_UNAVAILABLE` (describes checks for this evaluated candidate/snapshot, **not proof about all possible menus**).
-- `user_review_state`: `DRAFT`, `ACCEPTED`, `REJECTED`. UC-01 permits `ACCEPTED` only for a currently `VERIFIED` draft and explicit user action. `REVIEW_REQUIRED` is view/edit/clarify only: acknowledgment is **not** a safety clearance. `ACCEPTED` is **not an order**.
+**Three independent statuses (Option B):**
+- `cart_verification_status`: `VERIFIED`, `INFEASIBLE`, `DATA_UNAVAILABLE`. This covers **purchasable SKU packs, unit compatibility, quantities, price, stock, budget and snapshot validity only**; it is not a meal-suitability claim. `VERIFIED` requires no unresolved cart-data errors.
+- `meal_allergen_status`: `NOT_ASSESSED` (no allergies declared), `ASSESSED_NO_KNOWN_CONFLICT` (specified allergen checks passed with scoped evidence; **not medically safe**), `REVIEW_REQUIRED` (some declared allergen evidence is unknown, including pantry), `KNOWN_CONFLICT` (a known allergen conflict exists). A meal with `KNOWN_CONFLICT` is not an eligible recommendation for a shopper with that declared allergy; offer a different recipe/SKU rather than treat acknowledgment as clearance.
+- `user_review_state`: `DRAFT`, `ACCEPTED`, `REJECTED`. A user may explicitly `ACCEPT` a **currently cart-VERIFIED** draft even while `meal_allergen_status=REVIEW_REQUIRED`, provided the limitation is visibly disclosed and the candidate has **no KNOWN_CONFLICT**. Acceptance approves the *shopping cart contents*, **not the food's allergy suitability, order placement or payment**. The user must not be told that accepting clears any warning.
 
-**Acceptance-time verification (TOCTOU):** At the instant a customer accepts (`as_of_accept`), perform a **single atomic conditional update** (transaction or optimistic compare-and-swap) that checks the current `request_revision`, `DraftCart.revision`, previously verified recipe/evidence revisions, unchanged snapshot/source revision and `observed_at <= as_of_accept < price_valid_until` and `stock_valid_until` for every selected SKU. Re-evaluate required quantity/price/stock and unresolved food-evidence blockers. Only then transition `DRAFT → ACCEPTED`. Any stale/mismatched fact causes **no acceptance**, invalidates the prior result, refreshes/recalculates and asks for renewed confirmation; never silently accept a changed cart. This is **not a stock reservation** and does not guarantee availability after acceptance or authorize an order.
+**Acceptance-time verification (TOCTOU):** On the customer's accept action (`as_of_accept`), perform a single atomic conditional update that rechecks `request_revision`, `DraftCart.revision`, catalog source/snapshot revision and `observed_at <= as_of_accept < price_valid_until` and `stock_valid_until` for every purchased SKU; re-evaluate pack, quantity, price, stock and budget. Ensure no **newly known allergen conflict** has arisen in the current meal/recipe/SKU evidence; preserve unresolved food warnings explicitly. Then transition `DRAFT → ACCEPTED` **only if cart remains VERIFIED and meal status is not KNOWN_CONFLICT**. If cart facts or revisions changed, do not accept; reverify and request renewed customer confirmation. If allergy evidence changes to KNOWN_CONFLICT, reject the meal candidate and prevent acceptance. If warnings remain unknown, acceptance is allowed **with visible uncertainty**, not a food-safety override. There is no stock reservation or order/payment in UC-01.
 
-On stale snapshot or any request/cart edit, invalidate old `verification_status`, clear any old acceptance, recalculate and re-check. A user's acknowledgment of uncertainty cannot bypass the acceptance gate.
+On changed cart/request data invalidate old cart verification and user acceptance; on changed food evidence recalculate `meal_allergen_status` and warnings. Never silently discard previously declared allergens, and never infer that missing pantry evidence is safe.
 
 ## 4. Verifier output and partial search
 
@@ -116,7 +117,7 @@ Store **all** known issues in `problems[]`, not merely one string:
 
 Examples: `SKU_OUT_OF_STOCK`, `PRICE_EXPIRED`, `UNKNOWN_CROSS_CONTACT`, `ALLERGEN_ASSESSMENT_MISSING`, `KNOWN_ALLERGEN_PRESENT`, `PANTRY_QUANTITY_UNKNOWN`, `UNIT_CONVERSION_MISSING`, `BUDGET_EXCEEDED`, `DUPLICATE_SKU_ALLOCATION`, `ACCEPTANCE_REVISION_CONFLICT`. Allergen-related problems also identify the relevant `allergen_id`.
 
-The primary `verification_status` is a summary; no unresolved hard errors may coexist with `VERIFIED`. For multiple blockers, report all and avoid a misleading single cause. A rejected **candidate** is `INFEASIBLE` for its own constraints. After trying at most three candidate menus, the conversation outcome is **NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET**, not a claim that no possible menu exists. This conversation outcome is distinct from the cart's verification status.
+Keep **cart problems** and **meal allergen problems** explicitly typed in `problems[]`; one does not overwrite the other. No unresolved cart errors may coexist with `cart_verification_status=VERIFIED`. An unknown pantry allergen affects `meal_allergen_status=REVIEW_REQUIRED` **without silently changing cart verification**. Known allergy conflicts exclude that meal candidate; candidate-level economic failure remains `INFEASIBLE` for the cart proposal. After at most three evaluated menu candidates without an eligible verified result, the conversation may report `NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET`, not global impossibility. This is a conversation outcome, not a cart status.
 
 ## 5. Traceable worked examples
 
@@ -125,11 +126,11 @@ The canonical UC-01 spec contains the small four-dish example, pack prices and f
 The corresponding expected invariants are:
 
 - Tomato amounts from two dishes aggregate **before** pantry subtraction and package rounding.
-- Pantry rice can fulfill a requirement without purchasing rice, but does not exempt that recipe component from declared-allergen checks. The paid basket may be priced correctly while the overall meal remains `REVIEW_REQUIRED` due to a specific pantry item's unknown evidence.
+- Pantry rice can fulfill a requirement without purchasing rice, but does not exempt that component from declared-allergen checks. A priced, purchasable cart can be `cart_verification_status=VERIFIED` and explicitly `ACCEPTED` while the meal remains `meal_allergen_status=REVIEW_REQUIRED` because pantry evidence is unknown; there is no allergy-safety assertion.
 - A single bundle/SKU cannot be double-counted across different canonical ingredient demands.
 - If a price changes or a new snapshot expires, the old cart loses `VERIFIED`; never keep a stale subtotal.
 - If pantry quantity is unknown, seek clarification or plan a conservative *purchased* quantity without asserting pantry coverage; do not represent unknown as zero confirmed stock.
-- Budget feasibility and ingredient safety are separate checks. A cheap cart with unresolved allergens is not `VERIFIED`.
+- Budget feasibility and allergen assessment are separate checks. Unknown pantry allergy evidence must not falsely clear meal suitability, but does not automatically fail price/stock-verified purchased packs.
 
 ## 6. Data acceptance gate before seed generation
 
@@ -145,7 +146,7 @@ The smallest accepted fixture must include:
 
 1. Accept **recipe-first with explicit per-dish serving targets** or permit the planner to invent quantities when recipe coverage is missing?
 2. Keep **purchasable-pack subtotal** as the hard budget and single-store/single-shared-meal scope?
-3. Keep **non-overridable review requirement** for unknown allergen evidence in UC-01, with no claim of medical suitability?
+3. **Approved Option B:** keep separate cart and meal-allergen statuses; allow acceptance of independently verified cart with visible pantry-uncertainty warnings, never claiming allergy suitability. Confirm detailed wording during final design sign-off.
 4. Accept **per-snapshot expiry timestamps** rather than one global TTL for all price/stock data?
 
 All four are proposals for review, not decisions already approved.
