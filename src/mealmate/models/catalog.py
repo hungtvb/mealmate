@@ -1,9 +1,9 @@
 """Catalog and food-evidence records, without claiming any provider is live."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from .meal import SourceModel
 
@@ -24,15 +24,40 @@ class FoodSubjectRef(SourceModel):
         return "/".join(self.parts)
 
 
+def _require_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() != timedelta(0):
+        raise ValueError("evidence timestamps must be timezone-aware UTC")
+    return value
+
+
+class AllergenAssessment(SourceModel):
+    allergen_id: str = Field(min_length=1)
+    ingredient_presence: Literal["PRESENT", "ABSENT", "UNKNOWN"]
+    cross_contact_status: Literal["KNOWN_PRESENT", "ASSESSED_ABSENT", "UNKNOWN"]
+    assessment_scope: str = Field(min_length=1)
+    source_ref: str = Field(min_length=1)
+    assessed_at: datetime
+
+    @field_validator("assessed_at")
+    @classmethod
+    def timestamp_is_utc(cls, value: datetime) -> datetime:
+        return _require_utc(value)
+
+
 class FoodEvidence(SourceModel):
     evidence_id: str = Field(min_length=1)
     subject_type: Literal["recipe_component", "sku", "pantry_item"]
     subject_ref: FoodSubjectRef
     ingredient_statement: str | None
-    allergen_assessments: list[dict]
+    allergen_assessments: list[AllergenAssessment]
     source_ref: str = Field(min_length=1)
     evidence_revision: str = Field(min_length=1)
     assessed_at: datetime
+
+    @field_validator("assessed_at")
+    @classmethod
+    def timestamp_is_utc(cls, value: datetime) -> datetime:
+        return _require_utc(value)
 
     @model_validator(mode="after")
     def typed_subject_matches(self):
