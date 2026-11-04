@@ -85,8 +85,9 @@ class CatalogView(SourceModel):
             raise ValueError("duplicate SKU rows in catalog view")
         if any(s.catalog_snapshot_id != self.snapshot.snapshot_id for s in self.skus):
             raise ValueError("SKU row is not part of catalog snapshot")
-        if any(s.food_evidence_ref.parts[:1] != (self.snapshot.store_id,) for s in self.skus):
-            raise ValueError("SKU evidence store must match snapshot store")
+        if any(s.food_evidence_ref.parts != (self.snapshot.store_id, s.sku, self.snapshot.snapshot_id)
+               or s.food_evidence_ref.kind != "sku" for s in self.skus):
+            raise ValueError("SKU food evidence must identify the matching store, SKU, and snapshot")
         return self
 
 
