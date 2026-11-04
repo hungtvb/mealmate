@@ -43,7 +43,7 @@ The fields below describe required meaning, not a commitment to separate SQL tab
 
 `RecipeIngredient`: stable `component_id` (unique within a `recipe_id + version`), `ingredient_id`, `quantity`, `unit`, `food_form`; sauces, spice mixtures and other processed ingredients are explicitly represented. References use the **versioned composite** `(recipe_id, recipe_version, component_id)`; a change to recipe contents creates a new version and evidence cannot silently follow it. A `data_completeness` failure excludes the recipe from a verified cart, not necessarily from a clearly labeled exploratory suggestion.
 
-`PlannedDish`: `recipe_id`, `recipe_version`, `target_servings`, `serving_role` (main/side/shared), `portion_rationale`. Ingredient need = `recipe_ingredient.quantity × target_servings / base_servings`. A four-person meal with three dishes **does not** imply three independent four-serving full meals; the chosen targets must be recorded and reviewable.
+`PlannedDish`: `recipe_id`, `recipe_version`, `target_servings`, `serving_role` (main/side/shared), `portion_rationale`. **Approved automatic portion Option A:** for an initial shared meal proposal, select a supported role-specific portion plan using curated recipe `base_servings`/yield, meal composition and diner count; do **not** require the user to specify each serving amount. Four side portions are **not** four complete meals. The LLM may choose among sourced role/portion options, but must not fabricate ingredient quantities or serving yields. Record recipe version, chosen role and portion rationale; reject/clarify when recipe role, yield or portion guidance is insufficient. The user may change `target_servings` for a dish; update its ingredient need by `recipe_ingredient.quantity × target_servings / base_servings`, then re-aggregate, re-deduct pantry, re-evaluate sellable packs, total price/stock and food evidence. Invalidate any old verification/acceptance on edit. Never round the intermediate ingredient quantities prematurely.
 
 ### Ingredient
 
@@ -138,7 +138,7 @@ The corresponding expected invariants are:
 
 The smallest accepted fixture must include:
 
-- Curated full recipe ingredients (including seasoning where applicable), explicit `PlannedDish` targets and ingredient units/forms.
+- Curated full recipe ingredients (including seasoning where applicable), **role-specific serving guidance**, explicit proposed `PlannedDish` targets, source-backed rationale and ingredient units/forms. Include a user edit changing one side dish's target servings without resetting other constraints (AC26).
 - One-store SKU/pack/price/stock snapshot with consistent UTC validity windows and source revisions.
 - Per-allergen, traceable ingredient-presence and cross-contact evidence for recipe, SKU and pantry contexts; include a **two-allergen** case where `SHRIMP` is assessed absent but `PEANUT` is unknown on the same SKU.
 - Negative **purchased-SKU Option A** case where a selected SKU's declared-allergen evidence is UNKNOWN: even with correct price/stock, acceptance is blocked. A separate positive replacement case must demonstrate a different evidenced SKU with fresh pack, stock and budget re-verification.
