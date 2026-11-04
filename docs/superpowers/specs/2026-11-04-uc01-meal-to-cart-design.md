@@ -27,7 +27,7 @@ A household shopper describes one **home-cooked meal**, diners, a grocery budget
 | **B. Recipe-first planning with structured recipes, then deterministic SKU/cart verification** | Traceable quantities, clear test oracle, easier constraints | Limited by coverage of recipe dataset | **Recommended; awaiting review** |
 | C. SKU-first catalog optimizer generates recipes from available products | Strong stock awareness | Complicated recipe generation/quality; larger optimization surface | Deferred |
 
-**Proposed rule:** The LLM can interpret intent, pick among valid recipes, explain or suggest alternatives. It cannot create a recipe quantity or product fact without structured source evidence.
+**Proposed rule:** The LLM can interpret intent, pick among valid recipes, explain or suggest alternatives. It cannot create a recipe quantity or product fact without structured source evidence. A recipe is eligible only when its complete ingredient list includes sauces, seasoning and processed components where available; incomplete declarations must not be treated as allergen-free.
 
 ## 3. Actor, scope and interaction
 
@@ -75,11 +75,12 @@ Required fields and semantics; exact Python/JSON schemas are deferred to the imp
 
 | Contract | Required fields | Invariants |
 | --- | --- | --- |
-| `MealRequest` | `request_id`, `diners` (positive int), `budget_vnd` (nonnegative integer), `meal_type`, `dislikes[]`, `allergens[]`, `dietary_restrictions[]`, `pantry[]`, `conversation_revision` | Constraints on shared dishes are cumulative; allergies never demoted to soft preferences |
-| `Recipe` | `recipe_id`, `version`, `title`, `base_servings`, `ingredients[]`, `tags[]`, `source_ref` | Each ingredient has `ingredient_id`, raw quantity, canonical unit and food form; absent ingredient/quantity means cannot use for verified cart |
+| `MealRequest` | `request_id`, `diners` (positive int), `budget_vnd` (nonnegative integer), `meal_type`, `dislikes[]`, `allergens[]`, `dietary_restrictions[]`, `pantry[]`, `conversation_revision` | Constraints on shared dishes are cumulative; an allergen reported for **any** diner applies to every shared dish. Pantry entries require `ingredient_id`, quantity, unit, food form and user confirmation; allergy evidence is tracked separately from quantity confirmation. |
+| `Recipe` | `recipe_id`, `version`, `title`, `base_servings`, `ingredients[]`, `tags[]`, `source_ref` | Each ingredient includes `ingredient_id`, raw quantity, canonical unit and food form, including sauces/seasonings; missing quantity or incomplete known component list blocks verified planning. |
+| `PlannedDish` | `recipe_id`, `recipe_version`, `target_servings`, `serving_role` (shared dish / main course / side dish) | Scaling uses **explicit target servings per selected dish**, not automatically `diners` for every recipe. Each dish declares its intended contribution to the meal; multi-dish portion policy requires review. |
 | `Ingredient` | `ingredient_id`, `canonical_name`, `aliases[]`, `measurement_dimension` | Conversions allowed only within compatible dimensions or via explicit preparation/yield factor |
-| `ProductSKU` | `sku`, `mapped_ingredient_ids[]`, `pack_amount`, `pack_uom`, `sellable_unit`, `price_vnd`, `stock_packs`, `stock_checked_at`, `price_checked_at` | Price refers to **one sellable package**, stock counts packages; negative and unknown values rejected |
-| `IngredientEvidence` | `sku`, `ingredient_statement`, `declared_allergens[]`, `cross_contact_status`, `label_source_ref`, `label_checked_at` | Cross-contact status explicitly KNOWN_PRESENT / ASSESSED_ABSENT / UNKNOWN; absent warning text is not evidence of safety |
+| `ProductSKU` | `sku`, `mapped_ingredient_ids[]`, `pack_amount`, `pack_uom`, `sellable_unit`, `price_vnd`, `stock_packs`, `stock_checked_at`, `price_checked_at` | Price refers to **one sellable package** and stock counts packages. In UC-01 a selected SKU may fulfill only one canonical ingredient demand; multi-ingredient bundle allocation is deferred to prevent double charging or double counting stock. |
+| `IngredientEvidence` | `sku`, `ingredient_statement`, `declared_allergens[]`, `cross_contact_status`, `label_source_ref`, `label_checked_at` | Product labels and credible cross-contact evidence are checked alongside recipe components and user-declared pantry ingredients. `KNOWN_PRESENT` / `ASSESSED_ABSENT` / `UNKNOWN` are **evidence states, not medical-safety certifications**; a missing warning is not proof of absence. |
 | `CartLine` | `ingredient_id`, `required_qty`, `pantry_qty`, `buy_qty`, `sku`, `packs`, `price_per_pack_vnd`, `line_total_vnd`, `evidence_refs[]` | `buy_qty = max(0, required_qty - confirmed_pantry_qty)`; pack quantity covers buy_qty |
 | `DraftCart` | `cart_id`, `revision`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `verification_status`, `problems[]`, `source_snapshot_id` | Not an order; versioned and revalidated after any modification or price/stock change |
 
@@ -92,14 +93,14 @@ Required fields and semantics; exact Python/JSON schemas are deferred to the imp
 ## 6. Business rules and deterministic verification
 
 1. Validate `diners > 0`, budget format/currency, and required serving information before computing.
-2. Scale each recipe amount by `diners / base_servings` using decimal/rational arithmetic; do not round early. Account for recipe-specific serving assumptions (shared dishes can be smaller portions; data must specify total expected yields).
+2. Set each `PlannedDish.target_servings` based on its role in the full menu and recipe yield, then scale its ingredients by `target_servings / base_servings` using decimal/rational arithmetic. **Do not assume four diners require four full servings of every dish.** Record the selected per-dish portion plan so a reviewer can check coverage; do not round intermediate quantities early.
 3. Aggregate only compatible `ingredient_id + measurement_dimension + food_form`; do not combine units or preparation forms by name alone.
 4. Subtract pantry quantities **only if confirmed**. “Có gạo” without amount remains unresolved; it cannot silently zero out rice requirements.
 5. For a single-SKU candidate: `packs = ceil(buy_qty / pack_amount)` after compatible unit conversion. Example **test fixture**: 600 g needed, 500 g packs at 75,000 VND, 2 packs required → 150,000 VND. With 200 g confirmed on hand, 1 pack → 75,000 VND.
-6. For MVP, choose **one verified SKU per ingredient** from a bounded set; select the lowest **total purchasable package cost** that covers the required quantity and meets stock/ingredient constraints. This is not a guarantee of global optimality across multi-SKU combinations.
+6. For MVP, choose **one verified SKU per ingredient** from a bounded set; select the lowest **total purchasable package cost** that covers the required quantity and meets stock/ingredient constraints. **If one SKU maps to multiple different canonical ingredient demands, reject that combination for UC-01 rather than charge or allocate its packs twice.** This is not a guarantee of global optimality across multi-SKU combinations.
 7. Price is computed only by trusted `sum(packs × price_vnd)`; insufficient stock, missing prices or incompatible units are hard blockers. Stock/price freshness is validated against a **configurable, documented policy**; threshold pending data review.
 8. Budget is a hard cap on proposed cart subtotal. If no feasible combination, say why and offer a verified cheaper menu or a request to revise budget. Do not hide the cost of unused remainder of packs.
-9. Allergens: exclude recipes known to contain the allergen; inspect SKU ingredient statement and cross-contact evidence. If information is missing/uncertain, return `REVIEW_REQUIRED` and **never label the item/cart allergen-safe**. A draft with unresolved allergy evidence cannot be auto-confirmed as verified.
+9. Allergens: apply the union of declared allergies across all diners sharing the meal; check every recipe ingredient (including sauces/seasonings), each selected SKU's label/cross-contact evidence **and any pantry ingredients relied on for that recipe**. Known incompatible ingredients are a hard rejection. Unknown/uncertain evidence returns `REVIEW_REQUIRED` and **never an allergen-safe claim**. A draft with unresolved allergy evidence cannot become `VERIFIED` or be automatically approved.
 10. Clinical context: no disease-based diet inference. Only explicit restrictions are enforceable; if insufficiently specified, ask or warn, not provide medical guarantees.
 11. No missing-data fallbacks that reinterpret unknown stock as zero, unknown price as free, or unknown allergen status as safe.
 12. After any user change, recalculate all affected quantities, prices and checks. A draft cart reflects its data snapshot and must be rechecked before any future checkout integration.
@@ -109,6 +110,14 @@ Required fields and semantics; exact Python/JSON schemas are deferred to the imp
 - `REVIEW_REQUIRED`: human inspection/clarification needed; not safe to claim all constraints verified.
 - `INFEASIBLE`: one or more hard constraints cannot be satisfied with available data/candidates.
 - `DATA_UNAVAILABLE`: authoritative data missing, stale or inconsistent.
+
+### Reporting multiple constraint failures
+
+A cart/result must retain **all** observed blockers as structured `problems[]` (reason code, affected recipe/ingredient/SKU, evidence reference and suggested next action), even when one primary status is shown. The primary status is a summary **not** a substitute for individual reasons:
+- Known unsafe/forbidden ingredients and known infeasible hard constraints: reject the candidate as `INFEASIBLE`.
+- Missing authoritative facts needed to decide safety, price, stock or conversions: `DATA_UNAVAILABLE` for the affected candidate, except unresolved allergen/cross-contact evidence is explicitly `REVIEW_REQUIRED`.
+- A candidate is `VERIFIED` **only if no unresolved blockers remain**; customer review of a warning is not evidence that the product is safe.
+- If reasons overlap, show the complete list and require a fresh candidate evaluation rather than infer success from a single status. Do not use a failure of one candidate to claim that *no* possible menu is feasible.
 
 ## 7. Boundaries (why agentic, why deterministic)
 
@@ -141,6 +150,10 @@ Use one orchestration flow initially, not a predeclared army of agents. Superpow
 | AC10 | Price/stock changes after draft | Snapshot mismatch → revalidation before any future confirmed order |
 | AC11 | Recipe uses cooked vs raw form without yield data | Cannot assert quantity match; ask/mark data unavailable |
 | AC12 | Same ingredient in two recipes | Aggregate once and apply package rounding **after** aggregation |
+| AC13 | Four diners share a main and two side dishes | Record each dish's planned serving target; no blind multiplication of full-meal portions across all dishes |
+| AC14 | One combo SKU appears eligible for two distinct ingredient demands | Reject unsupported cross-ingredient allocation; never count one package twice or double-charge stock |
+| AC15 | Declared allergy; processed seasoning or pantry item has unknown evidence | Preserve `REVIEW_REQUIRED`; never treat recipe or pantry as automatically safe |
+| AC16 | Stale stock and incompatible ingredient in the same candidate | Preserve both reason codes with evidence; never return a verified cart |
 
 ### Demonstration set (synthetic; not production evidence)
 Construct a tiny but coherent fixture: 8-12 recipes, 20-40 SKUs, clear price/stock snapshots, explicit ingredient and allergen evidence. Include positive, impossible-budget, missing-label and stale-stock cases. This is a **proposed test design**, not data already created.
@@ -174,12 +187,13 @@ The ShopMate archive is a reference, not an approved source dependency. Verify o
 2. Confirm single-store + one shared meal for all diners as the first slice.
 3. Confirm unknown allergy evidence blocks `VERIFIED` but can be shown in a clearly marked `REVIEW_REQUIRED` proposal for manual inspection.
 4. Confirm recipe-first approach B and explicitly bounded alternatives.
+5. Confirm the default shared-meal portion policy (main + side dishes) and that recipes/condiments/pantry inputs must each be assessed for declared allergies.
 
 ## 11. Worked data fixture (proposed test oracle)
 
 This is a **design example only**—the catalog/recipes do not yet exist in the application. All amounts are illustrative, not nutritional or medical guidance.
 
-**Request:** four diners, budget 140,000 VND, already have 500 g dry rice and 100 g tomatoes, no declared allergies or special diet. Recipe amounts below are for four diners each.
+**Request:** four diners, budget 140,000 VND, already have 500 g dry rice and 100 g tomatoes, no declared allergies or special diet. **For this fixture only**, each of the four recipes is already portioned as a shared dish serving this household of four. The sample is an explicit `PlannedDish` selection, **not** the general rule that all dishes always need four full servings.
 
 | Recipe ID | Dish | Required ingredients |
 | --- | --- | --- |
