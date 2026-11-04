@@ -101,3 +101,87 @@ def test_price_expired_cannot_be_reused_by_stock_only_refresh() -> None:
     invalid = source.refresh_view("FG-01", original, "STOCK", after_price_deadline)
     assert invalid.view is None
     assert invalid.problem_code in {"STALE_REFRESH", "PRICE_EXPIRED"}
+
+
+def test_stock_only_refresh_rejects_changed_carried_price_value() -> None:
+    from mealmate.fixtures import FixtureSources
+    bundle = load_fixture("F-UC01-POS")
+    refreshed = bundle.refresh_result.view
+    replaced = refreshed.skus[0].model_copy(update={"price_vnd_per_pack": refreshed.skus[0].price_vnd_per_pack + 100})
+    view = refreshed.model_copy(update={"skus": [replaced, *refreshed.skus[1:]]})
+    altered = bundle.model_copy(update={"refresh_result": bundle.refresh_result.model_copy(update={"view": view})})
+    result = FixtureSources(altered).refresh_view("FG-01", bundle.catalog, "STOCK", EXPIRED)
+    assert result.view is None
+    assert result.problem_code == "INCOMPATIBLE_PRICE_PROVENANCE"
+
+
+def test_stock_only_refresh_rejects_changed_price_fact_ref() -> None:
+    from mealmate.fixtures import FixtureSources
+    bundle = load_fixture("F-UC01-POS")
+    refreshed = bundle.refresh_result.view
+    replaced = refreshed.skus[0].model_copy(update={"price_fact_ref": "fixture:price/new-unauthorized"})
+    view = refreshed.model_copy(update={"skus": [replaced, *refreshed.skus[1:]]})
+    altered = bundle.model_copy(update={"refresh_result": bundle.refresh_result.model_copy(update={"view": view})})
+    result = FixtureSources(altered).refresh_view("FG-01", bundle.catalog, "STOCK", EXPIRED)
+    assert result.view is None
+    assert result.problem_code == "INCOMPATIBLE_PRICE_PROVENANCE"
+
+
+def test_stock_only_refresh_cannot_extend_carried_price_deadline() -> None:
+    from datetime import timedelta
+    from mealmate.fixtures import FixtureSources
+    bundle = load_fixture("F-UC01-POS")
+    refreshed = bundle.refresh_result.view
+    later = refreshed.snapshot.model_copy(update={"price_valid_until": refreshed.snapshot.price_valid_until + timedelta(hours=1)})
+    view = refreshed.model_copy(update={"snapshot": later})
+    altered = bundle.model_copy(update={"refresh_result": bundle.refresh_result.model_copy(update={"view": view})})
+    result = FixtureSources(altered).refresh_view("FG-01", bundle.catalog, "STOCK", EXPIRED)
+    assert result.view is None
+    assert result.problem_code == "INCOMPATIBLE_PRICE_PROVENANCE"
+
+
+def test_current_evidence_returns_latest_eligible_subject_revision() -> None:
+    from datetime import timedelta
+    from mealmate.fixtures import FixtureSources
+    bundle = load_fixture("F-UC01-POS")
+    original = bundle.evidence[0]
+    latest = original.model_copy(update={
+        "evidence_id": "FE-R01-c01-new",
+        "evidence_revision": "recipe-v2",
+        "assessed_at": original.assessed_at + timedelta(minutes=5),
+    })
+    altered = bundle.model_copy(update={"refreshed_evidence": [latest, *bundle.refreshed_evidence]})
+    source = FixtureSources(altered)
+    assert source.current_for_subject(original.subject_ref, AT).evidence_revision == "recipe-v2"
+    assert source.current_for_subject(original.subject_ref, original.assessed_at).evidence_revision == "recipe-v1"
+
+
+def test_invalid_allergen_status_or_missing_scope_is_rejected() -> None:
+    from mealmate.models.catalog import FoodEvidence
+    original = load_fixture("F-UC01-POS").evidence[0]
+    assessment = {
+        "allergen_id": "PEANUT",
+        "ingredient_presence": "SAFE",
+        "cross_contact_status": "ASSESSED_ABSENT",
+        "assessment_scope": "package_label",
+        "source_ref": "fixture:label/source",
+        "assessed_at": "2026-11-04T06:00:00Z",
+    }
+    with pytest.raises(ValidationError):
+        FoodEvidence.model_validate({**original.model_dump(), "allergen_assessments": [assessment]})
+    assessment["ingredient_presence"] = "ABSENT"
+    del assessment["assessment_scope"]
+    with pytest.raises(ValidationError):
+        FoodEvidence.model_validate({**original.model_dump(), "allergen_assessments": [assessment]})
+
+
+def test_naive_allergen_evidence_time_is_rejected() -> None:
+    from mealmate.models.catalog import FoodEvidence
+    original = load_fixture("F-UC01-POS").evidence[0]
+    with pytest.raises(ValidationError):
+        FoodEvidence.model_validate({**original.model_dump(), "assessed_at": datetime(2026, 11, 4, 6)})
+
+
+def test_synthetic_fixture_is_packaged_as_resource() -> None:
+    from importlib.resources import files
+    assert files("mealmate").joinpath("data", "uc01_golden.json").is_file()
