@@ -1,4 +1,4 @@
-"""Draft contract is intentionally non-operational until cart verification exists."""
+"""Typed shopping draft; pack economics are verified before acceptance."""
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
@@ -13,6 +13,8 @@ class CartLine(SourceModel):
     required_qty: Decimal = Field(ge=0)
     confirmed_pantry_qty: Decimal = Field(ge=0)
     buy_qty: Decimal = Field(ge=0)
+    unit: Literal["g", "ml", "pcs"]
+    unused_qty: Decimal = Field(ge=0)
     sku: str
     packs: int = Field(gt=0)
     price_per_pack_vnd: int = Field(ge=0)
