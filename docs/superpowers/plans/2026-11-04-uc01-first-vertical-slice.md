@@ -36,7 +36,7 @@
 ## Proposed file map (new files, subject to stack approval)
 
 - `pyproject.toml`: minimal runtime/development dependencies and `pytest` settings.
-- `src/mealmate/models/{meal,catalog,cart}.py`: small Pydantic records with exactly the Data Contract fields; integer VND and UTC-aware timestamps.
+- `src/mealmate/__init__.py`, `src/mealmate/models/__init__.py`, `src/mealmate/models/{meal,catalog,cart}.py`: installable Python package and small Pydantic records with the Data Contract fields; integer VND and UTC-aware timestamps.
 - `src/mealmate/ports.py`: `RecipeSource`, `CatalogSource`, `EvidenceSource` protocols.
 - `src/mealmate/fixtures.py` and `tests/fixtures/uc01_golden.json`: read-only synthetic F-UC01-POS + scoped scenario variants; no real personal data.
 - `src/mealmate/quantities.py`: recipe scaling, canonical conversion, aggregation, pantry deduction.
@@ -50,11 +50,11 @@
 
 ## Task 1 — Typed records and a reproducible source fixture
 
-**Files:** Create `pyproject.toml`, `src/mealmate/models/{meal,catalog,cart}.py`, `src/mealmate/ports.py`, `src/mealmate/fixtures.py`, `tests/fixtures/uc01_golden.json`, `tests/test_fixtures.py`.
+**Files:** Create `pyproject.toml`, `src/mealmate/__init__.py`, `src/mealmate/models/__init__.py`, `src/mealmate/models/{meal,catalog,cart}.py`, `src/mealmate/ports.py`, `src/mealmate/fixtures.py`, `tests/fixtures/uc01_golden.json`, `tests/test_fixtures.py`.
 
 **Interfaces:**
 - `load_fixture(fixture_id: str) -> FixtureBundle`, returning versioned `MealRequest`, `Recipe`, `CatalogSnapshot`, and `FoodEvidence` records for `F-UC01-POS`.
-- `RecipeSource.get(recipe_id: str, version: str) -> Recipe | None`; `CatalogSource.snapshot(store_id: str, as_of: datetime) -> CatalogSnapshot`; `EvidenceSource.for_subject(subject_ref: str, evidence_revision: str) -> FoodEvidence | None`. Define their Python protocols once.
+- `RecipeSource.get(recipe_id: str, version: str) -> Recipe | None`; `CatalogSource.snapshot(store_id: str, as_of: datetime) -> CatalogSnapshot`; `EvidenceSource.for_subject(subject_ref: FoodSubjectRef, evidence_revision: str) -> FoodEvidence | None`. Define these Python protocols once. `FoodSubjectRef` is a **typed composite** (recipe-component, SKU or pantry reference), never an unscoped display-name string; define it alongside `FoodEvidence` in `models/catalog.py`.
 
 - [ ] **Step 1 — failing test:** `test_golden_fixture_is_typed_and_versioned`: load 4 curated recipes (`R01`–`R04`), 3 distinct confirmed pantry IDs, 6 SKUs from FG-01 and snapshot `S-FG-001` with `observed_at=06:00Z`, `price_valid_until=08:00Z`, `stock_valid_until=06:30Z`. Missing source refs/revisions or negative price must fail validation.
 - [ ] **Step 2 — prove RED:** `python -m pytest tests/test_fixtures.py -q` → FAIL for missing records/import.
@@ -78,7 +78,7 @@
 
 **Files:** Create `src/mealmate/cart_builder.py`, `tests/test_cart_builder.py`.
 
-**Interfaces:** `build_cart(request: MealRequest, dishes: list[PlannedDish], needs: list[IngredientNeed], catalog: CatalogSnapshot) -> DraftCart` with independently populated `cart_verification_status` and structured `problems[]`; meal-allergen status is assessed in Task 4, not implicitly cleared here.
+**Interfaces:** `build_cart(request: MealRequest, dishes: list[PlannedDish], needs: list[IngredientNeed], catalog: CatalogSnapshot, as_of: datetime) -> DraftCart` with independently populated `cart_verification_status` and structured `problems[]`; meal-allergen status is assessed in Task 4, not implicitly cleared here.
 
 - [ ] **Step 1 — failing tests:** `test_ac01_golden` → **5 SKU lines / 6 complete packs / 116000 VND / budget 140000 VND / cart VERIFIED** at 06:10Z. `test_ac06_full_packs` → 600 g with 500-g pack at 75000 VND costs **150000**, leaves 400 g; not 90000. `test_ac09_repriced_candidate` → **148000** and `BUDGET_EXCEEDED`. `test_ac14_multi_ingredient_allocation` rejects a bundled SKU used for two demands.
 - [ ] **Step 2 — prove RED:** `python -m pytest tests/test_cart_builder.py -q` → FAIL.
@@ -102,7 +102,7 @@
 
 **Files:** Create `src/mealmate/search.py`, `tests/test_search.py`.
 
-**Interfaces:** `search_candidates(request: MealRequest, recipe_source: RecipeSource, catalog: CatalogSnapshot, evidence: EvidenceSource, preferred: Candidate | None, max_candidates: int = 3) -> SearchResult`. Candidate identity includes complete dish version/servings plus chosen SKU/pack combination; `SearchResult` contains candidate IDs, attempted blockers, outcome and current acceptable draft (if any).
+**Interfaces:** `search_candidates(request: MealRequest, recipe_source: RecipeSource, catalog: CatalogSnapshot, evidence: EvidenceSource, preferred: Candidate | None, as_of: datetime, max_candidates: int = 3) -> SearchResult`. Define `Candidate` and `SearchResult` in `search.py`. Candidate identity includes complete recipe versions/dish servings plus selected SKU/pack combination; `SearchResult` contains candidate IDs, attempted blockers, outcome and acceptable draft (if any). All candidate checks use the supplied deterministic `as_of`.
 
 - [ ] **Step 1 — failing tests:** `test_ac23_three_total_candidates` evaluates C01+C02+C03 **once each**, never C04, and gives `NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET`. `test_ac29` re-evaluates prior tomato SKU after price refresh and finds sourced ALT yielding **120000 VND**. `test_ac30` replaces out-of-stock tofu in coherent `S-FG-004` with a sourced 400-g alternative yielding **119000 VND**. `test_ac31_mixed_stores_rejected` blocks a basket mixing FG-01 and FG-02.
 - [ ] **Step 2 — prove RED:** `python -m pytest tests/test_search.py -q` → FAIL.
@@ -114,7 +114,7 @@
 
 **Files:** Create `src/mealmate/drafts.py`, `src/mealmate/service.py`, `tests/test_drafts.py`.
 
-**Interfaces:** `DraftRepository.save_new(draft: DraftCart) -> DraftCart`; `DraftRepository.get(cart_id: str) -> DraftCart | None`; `DraftRepository.compare_and_set(cart_id: str, expected_revision: int, updated: DraftCart) -> bool`. `MealService.apply_change(cart_id: str, change: AppliedChange) -> DraftCart`; `MealService.explain(cart_id: str, question: str) -> Explanation`.
+**Interfaces:** `DraftRepository.save_new(draft: DraftCart) -> DraftCart`; `DraftRepository.get(cart_id: str) -> DraftCart | None`; `DraftRepository.compare_and_set(cart_id: str, expected_revision: int, updated: DraftCart) -> bool`. `MealService(recipe_source: RecipeSource, catalog_source: CatalogSource, evidence_source: EvidenceSource, repo: DraftRepository)`; `MealService.apply_change(cart_id: str, change: AppliedChange, as_of: datetime) -> DraftCart`; `MealService.explain(cart_id: str, question: str) -> Explanation`. Define `AppliedChange` (validated whitelisted dimension and new value) and `Explanation` (sourced text + citations) in `service.py`; never treat arbitrary chat text as an applied change.
 
 - [ ] **Step 1 — failing tests:** `test_ac27_read_only_turn` preserves `conversation_revision`, cart revision and current verification for “Vì sao chọn món này?”. `test_ac20_material_change` increments effective request revision and invalidates old acceptance, then rebuilds quantities. `test_ac26` edited R04 → **132000 VND / 7 packs**. Duplicate pantry IDs and unconfirmed oil quantity do not silently deduct stock (`AC04/AC18`).
 - [ ] **Step 2 — prove RED:** `python -m pytest tests/test_drafts.py -q` → FAIL.
@@ -126,7 +126,7 @@
 
 **Files:** Modify `src/mealmate/drafts.py`, `src/mealmate/service.py`; create `tests/test_acceptance.py`.
 
-**Interfaces:** `MealService.accept(cart_id: str, expected_revision: int, as_of: datetime) -> AcceptanceResult`, with `ACCEPTED | RECONFIRM_REQUIRED | BLOCKED` and typed reason codes. The result is a draft approval, **not** an order.
+**Interfaces:** `MealService.accept(cart_id: str, expected_revision: int, as_of: datetime) -> AcceptanceResult`, with `ACCEPTED | RECONFIRM_REQUIRED | BLOCKED` and typed reason codes. Define `AcceptanceResult` in `drafts.py` and persist `verification_basis` (including per-SKU fact validity and typed recipe/evidence revisions) with each draft. The result is a draft approval, **not** an order.
 
 - [ ] **Step 1 — failing tests:** `test_ac08_accept_verified` explicit action transitions one current cart to ACCEPTED. `test_ac19_stock_expired` at 06:31Z denies old snapshot. `test_ac28_recipe_or_label_revision_race` denies stale verified basis even when stock/price valid. `test_ac33_price_valid_stock_expired` at 06:45Z reuses price **only if** provider issues a compatible new coherent snapshot, otherwise returns DATA_UNAVAILABLE/reconfirmation. `test_double_accept_and_stale_revision` rejects the second stale CAS; `test_ac21_pantry_warning_stays_visible` permits cart acceptance with unresolved pantry warning only.
 - [ ] **Step 2 — prove RED:** `python -m pytest tests/test_acceptance.py -q` → FAIL.
@@ -138,7 +138,7 @@
 
 **Files:** Create `src/mealmate/api.py`, `src/mealmate/intent.py`, `tests/test_api.py`, `tests/test_uc01_e2e.py`, `.github/workflows/ci.yml`.
 
-**Interfaces:** `IntentInterpreter.interpret(text: str, current_request: MealRequest | None) -> ParsedTurn`; `ParsedTurn.action` is `CREATE | APPLY_CHANGE | EXPLAIN | CLARIFY` and fields are schema-whitelisted. FastAPI `create_app(service: MealService, interpreter: IntentInterpreter) -> FastAPI`. Routes: `POST /v1/drafts` (structured typed request), `GET /v1/drafts/{id}`, `PATCH /v1/drafts/{id}` (explicit material change), `POST /v1/drafts/{id}/accept` (explicit action + revision), `POST /v1/chat` (parsed turn; never an implicit accept).
+**Interfaces:** `IntentInterpreter.interpret(text: str, current_request: MealRequest | None) -> ParsedTurn`; define `ParsedTurn` in `intent.py`, with `action` in `CREATE | APPLY_CHANGE | EXPLAIN | CLARIFY` and schema-whitelisted fields. Deterministic stub tests the contract, not free-form language understanding. FastAPI `create_app(service: MealService, interpreter: IntentInterpreter) -> FastAPI`. Routes: `POST /v1/drafts` (structured typed request), `GET /v1/drafts/{id}`, `PATCH /v1/drafts/{id}` (explicit material change), `POST /v1/drafts/{id}/accept` (explicit action + revision), `POST /v1/chat` (parsed turn; never an implicit accept).
 
 - [ ] **Step 1 — failing tests:** API test verifies valid structured fixture returns five lines / six packs / **116000 VND** with provenance; invalid budget and negative/unknown quantities return explicit 422/problem types. E2E `test_uc01_happy_to_accept` does POST draft→GET→explicit ACCEPT with version, no order. `test_uc01_unknown_purchased_sku_blocked` and `test_uc01_expired_stock_requires_reconfirm` exercise AC24/AC33 through the HTTP boundary. `test_uc01_chat_followups` uses a deterministic interpreter stub to test “Vì sao?” vs actual portion edit preserving constraints and allergy warnings. `test_ac32_personal_menu_not_supported` returns clear limitation.
 - [ ] **Step 2 — prove RED:** `python -m pytest tests/test_api.py tests/test_uc01_e2e.py -q` → FAIL.
