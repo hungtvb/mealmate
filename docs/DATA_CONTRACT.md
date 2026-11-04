@@ -5,7 +5,7 @@
 
 ## 1. Purpose and boundary
 
-Define **logical data contracts** and checkable invariants for one home-cooked meal → one-store **draft grocery cart**. This document owns field semantics and verification; the UC-01 design owns the business journey and acceptance scenarios. No DB schema, framework, API, data fixture or live supplier integration is approved here.
+Define **logical data contracts** and checkable invariants for **one shared home-cooked family meal → one-store draft grocery cart**, as expressly approved for UC-01. A shared meal can have several dishes but no separate meal per diner. All purchased SKU lines must belong to the **same selected store** and compatible catalog snapshot; no multi-store shopping or mixing prices/stock across stores. All shared dishes respect the union of diners' declared allergies/restrictions. If those constraints cannot be satisfied jointly, do not invent a personalized separate dish as a workaround; disclose the limitation or ask for a material request change. This document owns field semantics and verification; the UC-01 design owns the business journey and acceptance scenarios. No DB schema, framework, API, data fixture or live supplier integration is approved here.
 
 Two candidate designs were considered:
 
@@ -63,7 +63,7 @@ One SKU represents **one ingredient demand** in UC-01; mixed food bundles and on
 
 `snapshot_id`, `store_id`, `observed_at`, `price_valid_until`, `stock_valid_until`, `source_ref`, `source_revision`.
 
-A cart's selected SKU price and stock facts must refer to the **same logical store snapshot** or to separately versioned compatible reads with a documented consistency rule. UC-01 defaults to the single-snapshot approach.
+**Approved single-store scope:** a draft's purchased SKU lines must all have one `store_id`, matching the selected store, and refer to the **same logical store snapshot**. Never stitch together a cheaper basket from multiple stores or mix incompatible store/snapshot IDs. Different store selection is a user-initiated material request change; no automatic cross-store fallback. A future system may support separately versioned compatible reads, but UC-01 uses one consistent snapshot for its verified draft.
 
 At verification instant `as_of`, require `observed_at <= as_of < price_valid_until` and `observed_at <= as_of < stock_valid_until`. If either validity window is missing/expired, return `DATA_UNAVAILABLE` and request authoritative refresh. **No arbitrary universal TTL is assumed.** Drafts are reverified against a new snapshot before future order submission.
 
@@ -149,7 +149,7 @@ The smallest accepted fixture must include:
 - Per-allergen, traceable ingredient-presence and cross-contact evidence for recipe, SKU and pantry contexts; include a **two-allergen** case where `SHRIMP` is assessed absent but `PEANUT` is unknown on the same SKU.
 - Negative **purchased-SKU Option A** case where a selected SKU's declared-allergen evidence is UNKNOWN: even with correct price/stock, acceptance is blocked. A separate positive replacement case must demonstrate a different evidenced SKU with fresh pack, stock and budget re-verification.
 - At least one example with two dishes sharing an ingredient, one unknown pantry quantity, one cross-form conversion failure, one expired snapshot and one changed price.
-- Reproducible `as_of` plus **acceptance-time** expiry/revision checks for source snapshot, selected recipe versions and every selected FoodEvidence record; read-only chat must preserve a current draft while actual constraint edits invalidate it (AC27–AC28). Proactive budget/stock fallback must use newly sourced, compatible alternative SKU/cart facts, preserve all unchanged request constraints, and remain a DRAFT pending explicit approval (AC29–AC30). Include duplicate pantry-item and changed-recipe-version cases and asserted cart line amounts/statuses; verify against the UC-01 acceptance matrix before implementing runtime.
+- Reproducible `as_of` plus **acceptance-time** expiry/revision checks for source snapshot, selected recipe versions and every selected FoodEvidence record; read-only chat must preserve a current draft while actual constraint edits invalidate it (AC27–AC28). Proactive budget/stock fallback must use newly sourced, compatible alternative SKU/cart facts, preserve all unchanged request constraints, and remain a DRAFT pending explicit approval (AC29–AC30). Verify the one-store/single-shared-meal boundaries with mixed-store and conflicting individual-meal scenarios (AC31–AC32). Include duplicate pantry-item and changed-recipe-version cases and asserted cart line amounts/statuses; verify against the UC-01 acceptance matrix before implementing runtime.
 
 ## 7. Questions reserved for product review
 
