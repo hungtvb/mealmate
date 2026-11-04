@@ -13,3 +13,6 @@ Record consequential choices here or in a focused ADR; link the issue/PR and evi
 | 2026-11-04 | Proposed — review needed | Unknown allergy evidence blocks verified status | Unverified labels/cross-contact cannot be called safe |
 | 2026-11-04 | Proposed — review needed | FoodEvidence supports recipe/SKU/pantry; unresolved allergy evidence blocks draft acceptance | Avoid unsubstantiated allergen clearance; see [Data Contract](DATA_CONTRACT.md) |
 | 2026-11-04 | Proposed — review needed | CatalogSnapshot carries price/stock validity windows; no global TTL assumed | Prevent stale mixed-source cart totals; see [Data Contract](DATA_CONTRACT.md) |
+| 2026-11-04 | Proposed — review needed | Per-allergen ingredient and cross-contact assessments with versioned recipe/SKU/pantry references | A single global status could silently clear an unassessed allergen; see [Data Contract](DATA_CONTRACT.md) |
+| 2026-11-04 | Proposed — review needed | Acceptance rechecks snapshot, evidence and revision atomically | Avoid approving a stale cart and confusing acceptance with checkout; see [Data Contract](DATA_CONTRACT.md) |
+| 2026-11-04 | Proposed — product sign-off needed | Display provisional shopping list but block whole-meal VERIFIED while pantry allergy evidence is unresolved | Preserve useful prices without claiming home food safety; see [Data Contract](DATA_CONTRACT.md) |
