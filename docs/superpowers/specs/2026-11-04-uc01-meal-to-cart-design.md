@@ -62,9 +62,9 @@ flowchart TD
   J -- Yes --> L[Assess meal allergens and selected SKU evidence]
   L --> M{Known meal allergen conflict?}
   M -- Yes --> N[Reject meal candidate]
-  M -- No --> O{Selected purchased SKU evidence complete?}
-  O -- No --> P[Block ACCEPTED; offer sourced substitute or evidence]
-  O -- Yes --> Q[Present verified cart; pantry warning if unresolved]
+  M -- No --> O{All non-pantry allergen evidence complete?}
+  O -- No --> P[Block ACCEPTED; request recipe/SKU evidence or alternate]
+  O -- Yes --> Q[Present verified cart; disclose pantry warning if unresolved]
   Q --> R{User action?}
   R -- Explanation only --> Q
   R -- Material edit --> B
@@ -133,7 +133,7 @@ A cart/result must retain **all** observed blockers as structured `problems[]` (
 - Known allergen conflicts reject the **meal candidate** (`meal_allergen_status=KNOWN_CONFLICT`); missing pantry allergen evidence yields `meal_allergen_status=REVIEW_REQUIRED` without changing correct cart price/stock verification.
 - Missing price/stock/unit conversion facts yield `cart_verification_status=DATA_UNAVAILABLE`; known insufficient stock or exceeded budget yields `cart_verification_status=INFEASIBLE`.
 - `cart_verification_status=VERIFIED` requires no unresolved **cart-data** blockers. A customer's cart acceptance does not clear any meal-allergen warnings.
-- If reasons overlap, show the complete list and require a fresh candidate evaluation rather than infer success from a single status. Do not use a failure of one candidate to claim that *no* possible menu is feasible. If none of the bounded candidates passes **cart price/stock verification**, return conversation outcome `NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET` (AC23). If cart-data checks pass but all evaluated candidates are blocked by **selected-SKU allergy evidence** under Option A, use `NO_ACCEPTABLE_CART_IN_EVALUATED_SET` with the specific missing evidence and alternative actions. Neither outcome claims every possible menu is infeasible.
+- If reasons overlap, show the complete list and require a fresh candidate evaluation rather than infer success from a single status. Do not use a failure of one candidate to claim that *no* possible menu is feasible. If none of the bounded candidates passes **cart price/stock verification**, return conversation outcome `NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET` (AC23). If cart-data checks pass but all evaluated candidates remain ineligible for acceptance due to **non-pantry allergen evidence** (selected SKU under Option A or incomplete recipe-component evidence), use `NO_ACCEPTABLE_CART_IN_EVALUATED_SET` with specific missing evidence and alternative actions. Neither outcome claims every possible menu is infeasible.
 
 ## 7. Boundaries (why agentic, why deterministic)
 
