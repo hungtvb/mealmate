@@ -4,4 +4,4 @@ MealMate is an AI-assisted meal planning and grocery shopping project. It helps 
 
 **Status:** discovery and design. No application or checkout is implemented yet.
 
-Development follows a business-first, design-first process. See `AGENTS.md` and `docs/PRODUCT.md` once the bootstrap pull request has been reviewed and merged.
+Development follows a business-first, design-first process. See [AGENTS.md](AGENTS.md) for agent rules and [docs/PRODUCT.md](docs/PRODUCT.md) for product scope.
