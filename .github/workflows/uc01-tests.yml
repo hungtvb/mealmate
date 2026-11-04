@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - feat/uc01-task01-source-fixtures
+      - feat/uc01-task03-cart-verifier
   pull_request:
     branches:
       - docs/uc01-implementation-plan
+      - feat/uc01-task01-source-fixtures
 
 permissions:
   contents: read
