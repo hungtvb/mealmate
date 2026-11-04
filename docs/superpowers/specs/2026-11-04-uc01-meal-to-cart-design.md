@@ -77,7 +77,7 @@ Logical overview below; **[DATA_CONTRACT.md](../../DATA_CONTRACT.md) is authorit
 | Contract | Required fields | Invariants |
 | --- | --- | --- |
 | `MealRequest` | `request_id`, `conversation_revision`, `diners`, `meal_type`, `budget_vnd`, `dislikes[]`, `allergens[]`, `dietary_restrictions[]`, `pantry[]` | Allergens are canonical IDs per diner, combined for shared dishes. Each pantry item has stable `pantry_item_id`, quantity and independent food evidence. |
-| `Recipe` | `recipe_id`, `version`, `title`, `base_servings`, `ingredients[]`, `source_ref`, `data_completeness` | Recipe components have version-scoped `component_id`; ingredient/seasoning completeness required. |
+| `Recipe` | `recipe_id`, `version`, `title`, `base_servings`, `default_serving_role`, `ingredients[]`, `source_ref`, `data_completeness` | `base_servings` describes the **yield in the curated role**, such as side portions; source-backed role/yield is required before the planner proposes quantities. Ingredient and seasoning completeness is required. |
 | `PlannedDish` | `recipe_id`, `recipe_version`, `target_servings`, `serving_role`, `portion_rationale` | **Approved portion Option A:** propose servings automatically from sourced recipe yield/role and complete meal composition. `target_servings` are reviewable and editable; deterministic scaling, never LLM-fabricated ingredients. |
 | `Ingredient` | `ingredient_id`, `canonical_name`, `aliases[]`, `measurement_dimension`, `food_form`, `approved_conversion_refs[]` | Conversions allowed only within compatible dimensions and food forms, or via an explicit sourced factor. |
 | `ProductSKU` | `sku`, `ingredient_id`, `food_form`, `pack_quantity`, `pack_unit`, `price_vnd_per_pack`, `stock_packs`, `catalog_snapshot_id`, `food_evidence_ref` | Must match recipe demand by canonical ingredient ID, compatible food form and units; one SKU satisfies one ingredient demand in UC-01. |
@@ -195,7 +195,7 @@ The ShopMate archive is a reference, not an approved source dependency. Verify o
 - **Interaction risk:** too many clarification questions prevent task completion; ask only when required for safety/correctness and otherwise provide clearly marked options.
 
 ### Decisions requested at review
-1. Confirm whether the hard budget should cover **actual purchased packages** (recommended) or ingredient consumption cost. Current brief suggests purchased packages.
+1. **Approved budget Option A:** cap on actual purchased full packages, not prorated ingredient consumption. Taxes, delivery and promotions remain outside the initial subtotal assumption.
 2. Confirm single-store + one shared meal for all diners as the first slice.
 3. **Approved Option B:** separately verify cart price/stock and meal-allergen status; allow accepting an otherwise verified cart with unresolved pantry allergy evidence and visible warning. No food-safety claim.
 4. Confirm recipe-first approach B and explicitly bounded alternatives.
@@ -219,7 +219,7 @@ The ShopMate archive is a reference, not an approved source dependency. Verify o
 
 **Snapshot:** `store_id=FG-01`, `snapshot_id=S-FG-001`, `source_ref=fixture:grocery/FG-01`, `source_revision=stock-price-v1`, `observed_at=2026-11-04T06:00:00Z`, `price_valid_until=2026-11-04T08:00:00Z`, `stock_valid_until=2026-11-04T06:30:00Z`, `as_of=2026-11-04T06:10:00Z`. All sellable SKU rows below use this snapshot, its source revision and integer VND prices.
 
-**Recipes:** All four are `version=v1`, `base_servings=4`, `target_servings=4`, `data_completeness=COMPLETE`, with `source_ref=fixture:recipe/<recipe_id>@v1`. For this synthetic sample each recipe's curated serving role is given in the table; four servings of a side mean **four side portions accompanying the main**, not four additional full meals. The automatic plan sets each `target_servings=4` because the reviewed role-specific yield covers four diners; each `PlannedDish.portion_rationale` records this source/role choice. The complete ingredient lists have **no unlisted seasonings, sauces or cooking inputs**. Water is included explicitly for cooking and supplied by pantry.
+**Recipes:** All four are `version=v1`, `base_servings=4`, `target_servings=4`, `data_completeness=COMPLETE`, with `source_ref=fixture:recipe/<recipe_id>@v1`. Each recipe's curated `default_serving_role` is the role in the table (`R02=main`, `R01/R03/R04=side`); four servings of a side mean **four side portions accompanying the main**, not four additional full meals. The automatic plan sets each `target_servings=4` because the reviewed role-specific yield covers four diners; each `PlannedDish.portion_rationale` records this source/role choice. The complete ingredient lists have **no unlisted seasonings, sauces or cooking inputs**. Water is included explicitly for cooking and supplied by pantry.
 
 | Recipe | Role | Complete RecipeIngredient lines: `component_id → ingredient_id / food_form / quantity` |
 | --- | --- | --- |
@@ -295,6 +295,6 @@ This example checks a key invariant: tomatoes used in two recipes are **aggregat
 
 ### Minimum fixture review gate
 
-Before constructing a larger synthetic dataset, validate the pinned AC01 fixture and each **named variant** in §11 (including AC09, AC17–AC21 and AC23) against the specified expected states. Additional recipe/SKU coverage should be driven by uncovered acceptance scenarios, not arbitrary row counts.
+Before constructing a larger synthetic dataset, validate the pinned AC01 fixture and each **named variant** in §11 (including AC09, AC17–AC21, AC23–AC26) against the specified expected states. Additional recipe/SKU coverage should be driven by uncovered acceptance scenarios, not arbitrary row counts.
 
 **Sign-off gate:** This spec and its assumptions require user review. Once approved, create an implementation plan via Superpowers; no code, app scaffold or ShopMate import in this PR.
