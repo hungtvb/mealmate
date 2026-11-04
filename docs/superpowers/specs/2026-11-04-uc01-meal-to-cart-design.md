@@ -118,7 +118,7 @@ A cart/result must retain **all** observed blockers as structured `problems[]` (
 - Known allergen conflicts reject the **meal candidate** (`meal_allergen_status=KNOWN_CONFLICT`); missing pantry allergen evidence yields `meal_allergen_status=REVIEW_REQUIRED` without changing correct cart price/stock verification.
 - Missing price/stock/unit conversion facts yield `cart_verification_status=DATA_UNAVAILABLE`; known insufficient stock or exceeded budget yields `cart_verification_status=INFEASIBLE`.
 - `cart_verification_status=VERIFIED` requires no unresolved **cart-data** blockers. A customer's cart acceptance does not clear any meal-allergen warnings.
-- If reasons overlap, show the complete list and require a fresh candidate evaluation rather than infer success from a single status. Do not use a failure of one candidate to claim that *no* possible menu is feasible. Exhausting the bounded search returns `NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET`, a **conversation outcome**, not a verified statement that every menu is infeasible.
+- If reasons overlap, show the complete list and require a fresh candidate evaluation rather than infer success from a single status. Do not use a failure of one candidate to claim that *no* possible menu is feasible. If none of the bounded candidates passes **cart price/stock verification**, return conversation outcome `NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET` (AC23). If cart-data checks pass but all evaluated candidates are blocked by **selected-SKU allergy evidence** under Option A, use `NO_ACCEPTABLE_CART_IN_EVALUATED_SET` with the specific missing evidence and alternative actions. Neither outcome claims every possible menu is infeasible.
 
 ## 7. Boundaries (why agentic, why deterministic)
 
