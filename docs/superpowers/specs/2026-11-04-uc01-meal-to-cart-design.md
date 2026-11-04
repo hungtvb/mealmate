@@ -49,26 +49,40 @@ Follow-up such as “đổi món thịt thành cá, giữ nguyên ngân sách”
 
 ```mermaid
 flowchart TD
-  A[Meal request] --> B[Extract structured constraints]
+  A[Meal request or material edit] --> B[Apply named constraints; version material changes]
   B --> C{Critical input missing?}
   C -- Yes --> D[Clarify with user]
-  C -- No --> E[Select curated recipe candidates]
-  E --> F[Scale servings & aggregate ingredient amounts]
-  F --> G[Deduct confirmed pantry quantities]
-  G --> H[Resolve compatible SKUs and sellable packs]
-  H --> I[Check stock, prices, evidence and restrictions]
-  I --> J{All hard constraints satisfied?}
-  J -- Yes --> K[Present sourced menu & draft cart]
-  J -- No --> L[Explain failure and assess alternatives]
-  L --> P{Valid alternatives and retries left?}
-  P -- Yes --> E
-  P -- No --> M[No verified candidate in evaluated set]
-  K --> N{User edits?}
-  N -- Yes --> B
-  N -- No --> O[User reviews/accepts draft only]
+  C -- No --> E[Select curated candidate; include initial in limit]
+  E --> F[Scale sourced portions and aggregate needs]
+  F --> G[Deduct confirmed pantry amounts]
+  G --> H[Select sourced SKUs and whole packs]
+  H --> I[Verify pack quantity, price, stock, budget]
+  I --> J{Cart data VERIFIED?}
+  J -- No --> K[Record cart-data blocker]
+  J -- Yes --> L[Assess meal allergens and selected SKU evidence]
+  L --> M{Known meal allergen conflict?}
+  M -- Yes --> N[Reject meal candidate]
+  M -- No --> O{Selected purchased SKU evidence complete?}
+  O -- No --> P[Block ACCEPTED; offer sourced substitute or evidence]
+  O -- Yes --> Q[Present verified cart; pantry warning if unresolved]
+  Q --> R{User action?}
+  R -- Explanation only --> Q
+  R -- Material edit --> B
+  R -- Explicit accept --> S[Recheck source, recipe and evidence revisions]
+  S --> T{All acceptance checks current and eligible?}
+  T -- No --> U[Invalidate stale proposal; refresh and reconfirm]
+  T -- Yes --> V[Set draft cart ACCEPTED; no checkout]
+  K --> W{More candidates under cap?}
+  N --> W
+  P --> W
+  W -- Yes --> E
+  W -- No --> X{Any cart-data-VERIFIED candidate?}
+  X -- No --> Y[NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET]
+  X -- Yes --> Z[NO_ACCEPTABLE_CART_IN_EVALUATED_SET]
+  U --> Q
 ```
 
-**Bound the retries**: attempt up to three alternate menus per request (proposed limit; tune later). No silent loop or mutation of inventory. Data issues produce an explicit conflict, not optimistic assumptions.
+**Candidate bound:** `max_evaluated_candidates=3` **total**, including the first proposal and at most two alternatives. Never interpret this as three retries *after* the first attempt, and never loop after exhaustion. This is the current proposed bounded-search policy (AC23), not a claim of global infeasibility. The fallback UX when candidates fail budget/stock is a **separate business decision not yet approved**. A changed meal request starts a fresh proposal; a read-only explanation does not mutate the request or reset the candidate budget. Candidate-level cart verification is distinct from purchased-SKU allergen **acceptability**: the former can pass while the latter blocks acceptance (approved SKU Option A). An unknown **pantry** allergen alone permits explicit acceptance with visible warning (approved pantry Option B). Confirmation always rechecks current evidence and catalog facts, without placing an order.
 
 ## 5. Data contracts (logical, not DB tables yet)
 
@@ -84,7 +98,7 @@ Logical overview below; **[DATA_CONTRACT.md](../../DATA_CONTRACT.md) is authorit
 | `FoodEvidence` | `evidence_id`, `subject_type`, typed `subject_ref`, `ingredient_statement`, per-`allergen_id` `allergen_assessments[]`, `source_ref`, `evidence_revision`, `assessed_at` | Per-allergen ingredient presence and cross-contact require independent evidence; absent/missing assessment stays UNKNOWN, never a medical-safety certification. |
 | `CatalogSnapshot` | `snapshot_id`, `store_id`, `observed_at`, `price_valid_until`, `stock_valid_until`, `source_ref`, `source_revision` | Facts share one store snapshot and pass `observed_at <= as_of < valid_until`; stale/missing validity becomes `DATA_UNAVAILABLE`. |
 | `CartLine` | `ingredient_id`, `required_qty`, `confirmed_pantry_qty`, `buy_qty`, `sku`, `packs`, `price_per_pack_vnd`, `line_total_vnd`, `source_refs[]` | `buy_qty = max(0, required_qty - confirmed_pantry_qty)`; pack quantity covers buy_qty |
-| `DraftCart` | `cart_id`, `revision`, `request_revision`, `planned_dishes[]`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `snapshot_id`, `verified_at`, `cart_verification_status`, `meal_allergen_status`, `problems[]`, `user_review_state`, `accepted_at?` | Economic cart verification and meal allergy assessment are independent. `ACCEPTED` approves a cart, not meal allergy suitability or order/payment. |
+| `DraftCart` | `cart_id`, `revision`, `request_revision`, `planned_dishes[]`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `snapshot_id`, `verified_at`, `verification_basis`, `cart_verification_status`, `meal_allergen_status`, `problems[]`, `user_review_state`, `accepted_at?` | `verification_basis` pins catalog, recipe and every selected FoodEvidence revision. Cart facts and meal-allergen checks remain separate; ACCEPTED is neither a medical-safety claim nor an order. |
 
 **Data provenance:** recipe `source_ref`, ingredient mapping, product label record and catalog snapshot must be inspectable, not merely a natural-language citation added by an LLM.
 
@@ -159,13 +173,15 @@ Use one orchestration flow initially, not a predeclared army of agents. Superpow
 | AC17 | Two allergens SHRIMP + PEANUT: tomato SKU has SHRIMP assessed absent, PEANUT cross-contact UNKNOWN | Meal `REVIEW_REQUIRED` for PEANUT; SHRIMP evidence cannot clear PEANUT. Cart cost/stock may be verified, but purchased-SKU uncertainty **blocks ACCEPTED under approved Option A**. |
 | AC18 | Two pantry rice packages and recipe R02 updated from v1 to v2 | Distinct pantry_item_id and version-scoped recipe component evidence; no evidence reused across mismatched identities. |
 | AC19 | Verified at 06:10Z, customer accepts after stock expiry at 06:31Z | Atomic acceptance check rejects stale VERIFIED and requires refreshed re-verification and renewed user confirmation. |
-| AC20 | User edits budget/recipe to request_revision=2 and clicks old draft revision=1 | Compare-and-swap fails, old acceptance blocked and verification invalidated. |
+| AC20 | User **applies** changed budget/recipe to request_revision=2 and clicks draft verified for revision=1 | Material constraint revision changes; compare-and-swap fails, old acceptance is blocked and cart is reverified after the edit. |
 | AC21 | Allergy declared, pantry P01's allergy evidence unknown, purchased SKU facts all current and no known allergen conflict | `cart_verification_status=VERIFIED` and `meal_allergen_status=REVIEW_REQUIRED` simultaneously; user can explicitly ACCEPT the cart with visible warning. Does **not** clear the warning or imply meal suitability. |
 | AC22 | No allergens declared with full current catalog and recipe data | `cart_verification_status=VERIFIED`, `meal_allergen_status=NOT_ASSESSED`; UI says “no allergens assessed” and does not promise allergy safety. |
 | AC23 | Orchestrator receives injected cart evaluation outcomes C01=`INFEASIBLE/BUDGET_EXCEEDED`, C02=`INFEASIBLE/SKU_OUT_OF_STOCK`, C03=`DATA_UNAVAILABLE/PRICE_EXPIRED` with candidate limit 3 | Evaluate exactly these 3 IDs; no cart-VERIFIED candidate, so conversation outcome is `NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET`. Allergy review is separate from cart price/stock verification. |
 | AC24 | Declared PEANUT allergy; selected SKU G-TOM500 has missing PEANUT cross-contact assessment, but pack/price/stock are valid | `cart_verification_status=VERIFIED`, `meal_allergen_status=REVIEW_REQUIRED`; `user_review_state` remains `DRAFT`, acceptance **blocked** for this SKU under Option A. Show the exact missing assessment and request evidence or substitution. |
 | AC25 | AC24 with evidenced substitute G-TOM500-ALT, 500 g at **22,000 VND/pack**, 3 packs in stock in the pinned `S-FG-003` variation | Replace G-TOM500 with ALT (1 pack), recalculate exactly **120,000 VND**, 5 purchased SKU lines/6 packs. With required PEANUT assessments present on all chosen food subjects and valid stock/price, explicit acceptance becomes eligible; no medical-safety claim. |
 | AC26 | On positive fixture §11, user changes only R04 vegetable side from 4 to 6 role-specific portions | R04 greens change **400 → 600 g**, R04 water **800 → 1,200 ml**; total water becomes **2,600 ml**, still covered by 3,000 ml pantry. G-GREEN500 becomes **2 packs**, so subtotal **132,000 VND**, **7 packs / 5 SKU lines**. Preserve all other active constraints; invalidate previous cart acceptance and reverify. |
+| AC27 | On a still-current, verified draft, user asks “Vì sao chọn món này?” then “Nếu tăng rau thì sao?” **without applying an edit** | Explain with sourced context. Preserve `conversation_revision`, `DraftCart.request_revision`, `cart_verification_status=VERIFIED`, selected cart and prior acceptance eligibility; do not commit hypothetical edits or restart bounded search. Separately, a real serving edit is covered by AC26. |
+| AC28 | Draft is verified at 06:10Z; recipe R02 `v1→v2` **or** selected SKU label evidence `label-v1→label-v2` changes at 06:11Z; shopper accepts at 06:12Z while original stock/price snapshot is still valid | Atomic draft acceptance fails with `ACCEPTANCE_EVIDENCE_REVISION_CONFLICT`; do not reuse stale allergen checks or silently accept. Refresh recipe quantities/label evidence and meal warnings, reverify cart and require renewed customer confirmation (pantry B / purchased-SKU A still apply). |
 
 ### Demonstration set (synthetic; not production evidence)
 Start from the **pinned six-SKU fixture in §11**; grow beyond it only to cover a named acceptance scenario. For allergy tests use per-allergen evidence; the no-allergy golden case does not claim medical safety. Include positive, impossible-budget, missing-label and stale-stock cases. This is a **proposed test design**, not data already created.
@@ -291,10 +307,10 @@ This example checks a key invariant: tomatoes used in two recipes are **aggregat
 
 - **Editable portion follow-up (AC26):** After the positive fixture proposal, the shopper increases **only R04** (boiled greens, side role) from four to six portions. Use the unchanged sourced R04 v1 ingredients: greens `400 × 6/4 = 600 g`, water `800 × 6/4 = 1200 ml`. Combined water becomes `600 + 800 + 1200 = 2600 ml`, still less than pantry P03 (3000 ml); rice, eggs, tomatoes, oil and tofu are unchanged. Two G-GREEN500 packs cost 32,000 VND vs 16,000 VND before, so basket = **132,000 VND**, 5 SKU lines / 7 packs, remaining inside the 140,000 VND budget. Invalidate old acceptance; no silent changes to allergies, budget or other dishes.
 
-**Separate bounded-search oracle (AC23):** Use *stubbed cart evaluator outputs* for exactly three candidate IDs, `C01 → INFEASIBLE/BUDGET_EXCEEDED`, `C02 → INFEASIBLE/SKU_OUT_OF_STOCK`, `C03 → DATA_UNAVAILABLE/PRICE_EXPIRED`, with candidate limit 3 and no other candidates enumerated. Assert that the planner evaluates each once, does not invent a fourth candidate and reports `NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET` at the **conversation** level. These are not full recipes and cannot replace AC01's cart-calculation fixture.
+**Separate bounded-search oracle (AC23):** Use *stubbed cart evaluator outputs* for exactly three candidate IDs — **initial C01**, **alternative C02**, **alternative C03** — with `C01 → INFEASIBLE/BUDGET_EXCEEDED`, `C02 → INFEASIBLE/SKU_OUT_OF_STOCK`, `C03 → DATA_UNAVAILABLE/PRICE_EXPIRED`. `max_evaluated_candidates=3` includes the initial; no fourth attempt is allowed. Assert that the planner evaluates each once, does not invent a fourth candidate and reports `NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET` at the **conversation** level. These are not full recipes and cannot replace AC01's cart-calculation fixture.
 
 ### Minimum fixture review gate
 
-Before constructing a larger synthetic dataset, validate the pinned AC01 fixture and each **named variant** in §11 (including AC09, AC17–AC21, AC23–AC26) against the specified expected states. Additional recipe/SKU coverage should be driven by uncovered acceptance scenarios, not arbitrary row counts.
+Before constructing a larger synthetic dataset, validate the pinned AC01 fixture and each **named variant** in §11 (including AC09, AC17–AC21, AC23–AC28) against the specified expected states. AC27/AC28 are state/evidence-race tests, not new restaurant or supplier fixtures. Additional recipe/SKU coverage should be driven by uncovered acceptance scenarios, not arbitrary row counts.
 
 **Sign-off gate:** This spec and its assumptions require user review. Once approved, create an implementation plan via Superpowers; no code, app scaffold or ShopMate import in this PR.
