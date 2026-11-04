@@ -11,3 +11,5 @@ Record consequential choices here or in a focused ADR; link the issue/PR and evi
 | 2026-11-04 | Proposed — review needed | Recipe-first planning using structured recipes | Deterministic quantities and traceable recipe evidence; see [UC-01 spec](superpowers/specs/2026-11-04-uc01-meal-to-cart-design.md) |
 | 2026-11-04 | Proposed — review needed | Budget applies to purchasable pack subtotal | Avoid understating actual cart cost; tax/shipping not in UC-01 |
 | 2026-11-04 | Proposed — review needed | Unknown allergy evidence blocks verified status | Unverified labels/cross-contact cannot be called safe |
+| 2026-11-04 | Proposed — review needed | FoodEvidence supports recipe/SKU/pantry; unresolved allergy evidence blocks draft acceptance | Avoid unsubstantiated allergen clearance; see [Data Contract](DATA_CONTRACT.md) |
+| 2026-11-04 | Proposed — review needed | CatalogSnapshot carries price/stock validity windows; no global TTL assumed | Prevent stale mixed-source cart totals; see [Data Contract](DATA_CONTRACT.md) |
