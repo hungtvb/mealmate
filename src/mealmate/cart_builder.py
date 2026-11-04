@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_CEILING
 from heapq import heappop, heappush
-from itertools import count
 from uuid import uuid4
 
 from .models.cart import CartLine, DraftCart
@@ -146,6 +145,18 @@ def build_cart(
             issue("STOCK_EXPIRED", category="DATA_UNAVAILABLE")
 
     if not problems:
+        # Validate every demand, including pantry-fulfilled lines with buy_qty=0.
+        # Otherwise a corrupted zero-buy line could silently remove a purchase.
+        invalid_keys: set[NeedKey] = set()
+        for need in resolution.needs:
+            if not (
+                need.required_qty > 0
+                and need.confirmed_pantry_qty >= 0
+                and need.buy_qty >= 0
+                and need.required_qty == need.confirmed_pantry_qty + need.buy_qty
+            ):
+                invalid_keys.add(_key(need))
+                issue("INVALID_QUANTITY_RESOLUTION", ingredient_id=need.ingredient_id)
         sku_by_id = {sku.sku: sku for sku in catalog.skus}
         needed = [need for need in resolution.needs if need.buy_qty > 0]
         needed_keys = {_key(n) for n in needed}
@@ -168,13 +179,7 @@ def build_cart(
 
         for need in needed:
             key = _key(need)
-            if not (
-                need.required_qty >= 0
-                and need.confirmed_pantry_qty >= 0
-                and need.buy_qty > 0
-                and need.required_qty == need.confirmed_pantry_qty + need.buy_qty
-            ):
-                issue("INVALID_QUANTITY_RESOLUTION", ingredient_id=need.ingredient_id)
+            if key in invalid_keys:
                 continue
             chosen_sku = mapping.get(key)
             if chosen_sku is None:
