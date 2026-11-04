@@ -5,7 +5,7 @@ refresh attestation is meaningful only for deterministic tests.
 """
 from datetime import datetime
 import json
-from pathlib import Path
+from importlib.resources import files
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -39,7 +39,7 @@ class FixtureBundle(BaseModel):
 
 
 def load_fixture(fixture_id: str) -> FixtureBundle:
-    fixture_path = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "uc01_golden.json"
+    fixture_path = files("mealmate").joinpath("data", "uc01_golden.json")
     source = json.loads(fixture_path.read_text(encoding="utf-8"))
     if fixture_id == source["base"]["fixture_id"]:
         return FixtureBundle.model_validate(source["base"])
@@ -76,12 +76,28 @@ class FixtureSources:
         if result.view.snapshot.observed_at > as_of or result.view.snapshot.stock_valid_until <= as_of or result.view.snapshot.price_valid_until <= as_of:
             return CatalogRefreshResult(view=None, attested_carried_price_refs={}, attestation_ref=None, problem_code="STALE_REFRESH")
         if expired_facts == "STOCK":
+            # A carried price must retain the source fact, value, and deadline.
+            if (previous.snapshot.price_valid_until <= as_of
+                    or result.view.snapshot.price_valid_until > previous.snapshot.price_valid_until):
+                return CatalogRefreshResult(view=None, attested_carried_price_refs={}, attestation_ref=None, problem_code="INCOMPATIBLE_PRICE_PROVENANCE")
             old = {sku.sku: sku for sku in previous.skus}
             for sku in result.view.skus:
                 prior = old.get(sku.sku)
-                if prior is None or result.attested_carried_price_refs.get(sku.sku) != prior.price_fact_ref:
+                if (prior is None
+                        or result.attested_carried_price_refs.get(sku.sku) != prior.price_fact_ref
+                        or sku.price_fact_ref != prior.price_fact_ref
+                        or sku.price_vnd_per_pack != prior.price_vnd_per_pack):
                     return CatalogRefreshResult(view=None, attested_carried_price_refs={}, attestation_ref=None, problem_code="INCOMPATIBLE_PRICE_PROVENANCE")
         return result
 
     def current_for_subject(self, subject_ref: FoodSubjectRef, as_of: datetime) -> FoodEvidence | None:
-        return next((e for e in (*self.bundle.evidence, *self.bundle.refreshed_evidence) if e.subject_type == subject_ref.kind and e.subject_ref == subject_ref and e.assessed_at <= as_of), None)
+        eligible = [e for e in (*self.bundle.evidence, *self.bundle.refreshed_evidence)
+                    if e.subject_type == subject_ref.kind and e.subject_ref == subject_ref and e.assessed_at <= as_of]
+        if not eligible:
+            return None
+        latest_time = max(e.assessed_at for e in eligible)
+        latest = [e for e in eligible if e.assessed_at == latest_time]
+        # Conflicting equally-current records cannot be safely ranked by revision strings.
+        if len({e.model_dump_json() for e in latest}) != 1:
+            return None
+        return latest[0]
