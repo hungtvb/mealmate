@@ -1,6 +1,6 @@
 # UC-01 — Grocery Data Contract & Verification
 
-**Status:** PROPOSED — requires UC-01 design sign-off; **pantry Option B and purchased-SKU Option A approved as product decisions**; no implementation authorized.  
+**Status:** PROPOSED — requires overall UC-01 design sign-off; **Recipe-first approach B, pantry Option B and purchased-SKU Option A are approved product decisions**; no implementation authorized.  
 **Source design:** [UC-01](superpowers/specs/2026-11-04-uc01-meal-to-cart-design.md) · [Issue #2](https://github.com/hungtvb/mealmate/issues/2)
 
 ## 1. Purpose and boundary
@@ -10,7 +10,7 @@ Define **logical data contracts** and checkable invariants for one home-cooked m
 Two candidate designs were considered:
 
 - **A. Free-form LLM output as the source of recipes and prices:** easy to prototype, impossible to verify reliably; rejected.
-- **B. Curated recipe/SKU facts with typed evidence and deterministic cart verification:** repeatable and auditable; **proposed**.
+- **B. Recipe-first with curated versioned recipes, typed ingredient/SKU evidence and deterministic cart verification:** repeatable, bounded and auditable; **approved by product owner for UC-01**.
 - A future bundle/optimization model is deferred; UC-01 deliberately handles one SKU per canonical ingredient.
 
 ## 2. Shared conventions
@@ -26,6 +26,8 @@ Two candidate designs were considered:
 | Missing data | `UNKNOWN` is not zero, available, safe or verified. Preserve distinction between absent field and confirmed empty list. |
 
 ## 3. Logical records
+
+**Approved Recipe-first ordering:** choose a complete eligible `Recipe`/version first, choose sourced role-specific portions, derive the canonical `RecipeIngredient` requirements, aggregate/deduct confirmed pantry, then map outstanding demand to sourced single-store `ProductSKU` packs and verify the draft. Incomplete or absent recipe data must never be made up by an LLM. Selection of a different menu after budget/stock failure repeats this ordering for another curated recipe; SKU substitution preserves recipe/version while rebuilding and rechecking the candidate. These are logical responsibilities, not an implementation framework.
 
 The fields below describe required meaning, not a commitment to separate SQL tables.
 
