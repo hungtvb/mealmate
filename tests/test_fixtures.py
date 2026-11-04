@@ -84,3 +84,20 @@ def test_clean_src_editable_install(tmp_path) -> None:
     result = subprocess.run([sys.executable, "-c", "import mealmate; from importlib.metadata import version; print(version('mealmate'))"], cwd=tmp_path, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip().startswith("0.1.")
+
+def test_sku_cannot_reference_food_evidence_from_other_snapshot() -> None:
+    from mealmate.models.catalog import CatalogView
+    bundle = load_fixture("F-UC01-POS")
+    raw = bundle.catalog.model_dump()
+    raw["skus"][0]["food_evidence_ref"]["parts"] = ("FG-01", "G-RICE1000", "S-FG-OTHER")
+    with pytest.raises(ValidationError):
+        CatalogView.model_validate(raw)
+
+
+def test_price_expired_cannot_be_reused_by_stock_only_refresh() -> None:
+    source = FixtureSources(load_fixture("F-UC01-POS"))
+    after_price_deadline = datetime(2026, 11, 4, 8, 1, tzinfo=timezone.utc)
+    original = source.get_view("FG-01", AT)
+    invalid = source.refresh_view("FG-01", original, "STOCK", after_price_deadline)
+    assert invalid.view is None
+    assert invalid.problem_code in {"STALE_REFRESH", "PRICE_EXPIRED"}
