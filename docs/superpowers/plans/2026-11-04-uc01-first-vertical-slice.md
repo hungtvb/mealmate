@@ -138,7 +138,7 @@
 
 ## Task 8 — Thin API and conversational boundary with scenario-level E2E
 
-**Files:** Create `src/mealmate/api.py`, `src/mealmate/intent.py`, `tests/test_api.py`, `tests/test_uc01_e2e.py`, `.github/workflows/uc01-tests.yml`; **modify** `src/mealmate/service.py` to expose `MealService.create(...)`, reusing the session persistence and sourced candidate pipeline already reviewed in Tasks 5–7.
+**Files:** Create `src/mealmate/api.py`, `src/mealmate/intent.py`, `tests/test_api.py`, `tests/test_uc01_e2e.py`; **modify** `.github/workflows/uc01-tests.yml`, `src/mealmate/service.py` to expose `MealService.create(...)`, reusing the session persistence and sourced candidate pipeline already reviewed in Tasks 5–7.
 
 **Interfaces:** `IntentInterpreter.interpret(text: str, current_request: MealRequest | None) -> ParsedTurn`; define `ParsedTurn` in `intent.py` with `action=CREATE | APPLY_CHANGE | EXPLAIN | CLARIFY` and schema-whitelisted fields (never implicit ACCEPT). Deterministic interpreter stub tests only the structured contract. FastAPI `create_app(service: MealService, interpreter: IntentInterpreter) -> FastAPI`; routes: `POST /v1/drafts` (typed request), `GET /v1/drafts/{id}`, `PATCH /v1/drafts/{id}` (explicit mutation with revision), `POST /v1/drafts/{id}/accept` (explicit action + expected cart revision), `POST /v1/chat` (parsed turn; never implicit accept). `MealService.create(request: MealRequest, as_of: datetime) -> DraftCart` saves a `SessionState` with matching request/cart revisions and the chosen source-backed candidate. All GET/PATCH/ACCEPT operations refer to the persisted effective request.
 
