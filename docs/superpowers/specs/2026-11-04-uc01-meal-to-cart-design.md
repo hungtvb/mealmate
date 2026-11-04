@@ -58,9 +58,10 @@ flowchart TD
   H --> I[Check stock, prices, evidence and restrictions]
   I --> J{All hard constraints satisfied?}
   J -- Yes --> K[Present sourced menu & draft cart]
-  J -- No --> L[Explain failure; bounded alternative candidates]
-  L --> E
-  L --> M[No feasible plan / needs review]
+  J -- No --> L[Explain failure and assess alternatives]
+  L --> P{Valid alternatives and retries left?}
+  P -- Yes --> E
+  P -- No --> M[No feasible plan / needs review]
   K --> N{User edits?}
   N -- Yes --> B
   N -- No --> O[User reviews/accepts draft only]
