@@ -1,6 +1,6 @@
 # UC-01 — Grocery Data Contract & Verification
 
-**Status:** PROPOSED — requires overall UC-01 design sign-off; **Recipe-first approach B, pantry Option B and purchased-SKU Option A are approved product decisions**; no implementation authorized.  
+**Status:** UC-01 business policies approved (including source-specific freshness Option A); technical design re-review and implementation planning remain separate gates. No application code authorized by this contract.  
 **Source design:** [UC-01](superpowers/specs/2026-11-04-uc01-meal-to-cart-design.md) · [Issue #2](https://github.com/hungtvb/mealmate/issues/2)
 
 ## 1. Purpose and boundary
@@ -63,9 +63,9 @@ One SKU represents **one ingredient demand** in UC-01; mixed food bundles and on
 
 `snapshot_id`, `store_id`, `observed_at`, `price_valid_until`, `stock_valid_until`, `source_ref`, `source_revision`.
 
-**Approved single-store scope:** a draft's purchased SKU lines must all have one `store_id`, matching the selected store, and refer to the **same logical store snapshot**. Never stitch together a cheaper basket from multiple stores or mix incompatible store/snapshot IDs. Different store selection is a user-initiated material request change; no automatic cross-store fallback. A future system may support separately versioned compatible reads, but UC-01 uses one consistent snapshot for its verified draft.
+**Approved single-store scope:** a draft's purchased SKU lines must all have one `store_id`, matching the selected store, and refer to the **same coherent logical store snapshot**. Never stitch together a cheaper basket from multiple stores or mix incompatible store/snapshot IDs. Different store selection is a user-initiated material request change; no automatic cross-store fallback. A future system may support separately versioned compatible reads, but UC-01 uses one consistent snapshot for its verified draft.
 
-At verification instant `as_of`, require `observed_at <= as_of < price_valid_until` and `observed_at <= as_of < stock_valid_until`. If either validity window is missing/expired, return `DATA_UNAVAILABLE` and request authoritative refresh. **No arbitrary universal TTL is assumed.** Drafts are reverified against a new snapshot before future order submission.
+**Approved source-specific freshness — Option A (2026-11-04):** At a verification or explicit cart-acceptance instant `as_of`, independently require `observed_at <= as_of < price_valid_until` **and** `observed_at <= as_of < stock_valid_until` for each selected SKU. If just one fact expires, invalidate prior `cart_verification_status=VERIFIED` and obtain **fresh authoritative evidence for that fact**; do not invent stock/price or substitute a global 15-minute TTL. A price fact still within its source-defined validity window may be **carried forward only into a newly emitted, coherent same-store catalog snapshot** with traceable unchanged price provenance and compatibility attested by the authoritative provider. The new snapshot must identify its refreshed stock fact and have a fresh `snapshot_id/source_revision`; then reverify and redisplay the entire draft for explicit user confirmation. **Never splice two independent snapshots** or keep an old `VERIFIED` flag. If the source cannot attest compatibility or produce a coherent new snapshot, refresh **both** facts or return `DATA_UNAVAILABLE` and block acceptance. Future checkout requires independent re-verification; a UC-01 accepted draft is not an order.
 
 ### FoodEvidence (allergen-specific, versioned)
 
@@ -153,9 +153,9 @@ The smallest accepted fixture must include:
 
 ## 7. Questions reserved for product review
 
-1. **Approved portion Option A:** automatically propose role-aware dish servings from curated recipe yields and allow user edits. Recipe-first versus SKU-first product strategy still awaits overall sign-off; never permit invented quantities.
-2. **Approved budget Option A:** actual purchasable-pack subtotal. Single-store/single-shared-meal scope remains proposed for final product sign-off.
+1. **Approved Recipe-first B and portion A:** select versioned complete recipes, propose role-aware servings using curated yields and allow edits. Never invent quantities.
+2. **Approved budget A and shared-meal scope:** whole purchasable-pack subtotal, one selected store and one shared meal. Taxes/shipping/promotions are **excluded from the first-slice subtotal** and must be disclosed.
 3. **Approved pantry Option B and purchased-SKU Option A:** keep price/stock cart verification separate from meal-allergen checks. Pantry-only uncertainty permits cart acceptance with explicit warning; any purchased-SKU allergen evidence gap blocks acceptance and triggers substitution/evidence requests. Neither outcome claims the meal is medically safe.
-4. Accept **per-snapshot expiry timestamps** rather than one global TTL for all price/stock data?
+4. **Approved freshness Option A:** separate price/stock validity windows, selective authoritative refresh into a coherent one-store snapshot (or fail closed), no global TTL.
 
-Decisions explicitly marked **approved** above are recorded product choices; remaining design questions are still proposed and require overall review.
+The product owner approved these business proposals on 2026-11-04. Provider consistency proof, test fixtures, technical design review and merge readiness are **separate engineering gates**, not implied by product approval.
