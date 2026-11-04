@@ -78,12 +78,12 @@ Logical overview below; **[DATA_CONTRACT.md](../../DATA_CONTRACT.md) is authorit
 | `MealRequest` | `request_id`, `diners`, `budget_vnd`, `allergens[]`, `pantry[]`, `conversation_revision`, other constraints | Allergens are canonical IDs per diner, combined for shared dishes. Each pantry item has stable `pantry_item_id`, quantity and independent food evidence. |
 | `Recipe` | `recipe_id`, `version`, `title`, `base_servings`, `ingredients[]`, `tags[]`, `source_ref` | Recipe components have version-scoped `component_id`; ingredient/seasoning completeness required. |
 | `PlannedDish` | `recipe_id`, `recipe_version`, `target_servings`, `serving_role` (shared dish / main course / side dish) | Scaling uses **explicit target servings per selected dish**, not automatically `diners` for every recipe. Each dish declares its intended contribution to the meal; multi-dish portion policy requires review. |
-| `Ingredient` | `ingredient_id`, `canonical_name`, `aliases[]`, `measurement_dimension` | Conversions allowed only within compatible dimensions or via explicit preparation/yield factor |
-| `ProductSKU` | `sku`, `ingredient_id`, `pack_quantity`, `pack_unit`, `price_vnd_per_pack`, `stock_packs`, `catalog_snapshot_id`, `food_evidence_ref` | One SKU satisfies one ingredient demand in UC-01; price and stock are values for sellable packs in the referenced store snapshot. |
+| `Ingredient` | `ingredient_id`, `canonical_name`, `aliases[]`, `measurement_dimension`, `food_form`, `approved_conversion_refs[]` | Conversions allowed only within compatible dimensions and food forms, or via an explicit sourced factor. |
+| `ProductSKU` | `sku`, `ingredient_id`, `food_form`, `pack_quantity`, `pack_unit`, `price_vnd_per_pack`, `stock_packs`, `catalog_snapshot_id`, `food_evidence_ref` | Must match recipe demand by canonical ingredient ID, compatible food form and units; one SKU satisfies one ingredient demand in UC-01. |
 | `FoodEvidence` | `evidence_id`, typed `subject_ref`, `ingredient_statement`, per-`allergen_id` `allergen_assessments[]`, `source_ref`, `evidence_revision` | Per-allergen ingredient presence and cross-contact require independent evidence; absent/missing assessment stays UNKNOWN, never a medical-safety certification. |
 | `CatalogSnapshot` | `snapshot_id`, `store_id`, `observed_at`, `price_valid_until`, `stock_valid_until`, `source_ref` | Facts share one store snapshot and pass `observed_at <= as_of < valid_until`; stale/missing validity becomes `DATA_UNAVAILABLE`. |
-| `CartLine` | `ingredient_id`, `required_qty`, `pantry_qty`, `buy_qty`, `sku`, `packs`, `price_per_pack_vnd`, `line_total_vnd`, `evidence_refs[]` | `buy_qty = max(0, required_qty - confirmed_pantry_qty)`; pack quantity covers buy_qty |
-| `DraftCart` | `cart_id`, `request_revision`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `verification_status`, `problems[]`, `snapshot_id`, `user_review_state` | Verification and explicit user acceptance are distinct. `ACCEPTED` requires a currently verified draft and is not an order. |
+| `CartLine` | `ingredient_id`, `required_qty`, `confirmed_pantry_qty`, `buy_qty`, `sku`, `packs`, `price_per_pack_vnd`, `line_total_vnd`, `source_refs[]` | `buy_qty = max(0, required_qty - confirmed_pantry_qty)`; pack quantity covers buy_qty |
+| `DraftCart` | `cart_id`, `revision`, `request_revision`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `verification_status`, `problems[]`, `snapshot_id`, `user_review_state`, `accepted_at?` | Verification and explicit user acceptance are distinct. `ACCEPTED` requires a currently verified draft and is not an order. |
 
 **Data provenance:** recipe `source_ref`, ingredient mapping, product label record and catalog snapshot must be inspectable, not merely a natural-language citation added by an LLM.
 
@@ -147,7 +147,7 @@ Use one orchestration flow initially, not a predeclared army of agents. Superpow
 | AC06 | Need 600 g, 500 g pack at 75k | Two packages, 150k before pantry; insufficient stock blocks that SKU |
 | AC07 | “Đổi món thịt sang cá, giữ ngân sách” | Replace dish, recompute from sources, retain all other active constraints |
 | AC08 | User accepts currently verified draft | Change `user_review_state` to `ACCEPTED` only when `verification_status=VERIFIED`; cannot create order or payment. Unknown allergy evidence blocks acceptance. |
-| AC09 | Fixed 140,000 VND fixture with G-TOM500 price raised to 50,000 VND | Candidate `INFEASIBLE` with BUDGET_EXCEEDED (148,000 VND); bounded search exhaustion reports NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET, not global impossibility. |
+| AC09 | Fixed 140,000 VND fixture repriced in new snapshot S-FG-002 (G-TOM500 = 50,000 VND) | **This candidate only**: `INFEASIBLE` with `BUDGET_EXCEEDED` (148,000 VND); do **not** assert that all other menu candidates are impossible or search is exhausted. |
 | AC10 | Price/stock changes after draft | Snapshot mismatch → revalidation before any future confirmed order |
 | AC11 | Recipe uses cooked vs raw form without yield data | Cannot assert quantity match; ask/mark data unavailable |
 | AC12 | Same ingredient in two recipes | Aggregate once and apply package rounding **after** aggregation |
@@ -161,6 +161,7 @@ Use one orchestration flow initially, not a predeclared army of agents. Superpow
 | AC20 | User edits budget/recipe to request_revision=2 and clicks old draft revision=1 | Compare-and-swap fails, old acceptance blocked and verification invalidated. |
 | AC21 | Allergy declared and a pantry item's label/evidence unknown | Priced provisional SKU list permitted with warnings; whole meal cannot be VERIFIED/ACCEPTED; customer acknowledgment is not safety clearance. |
 | AC22 | No allergens declared with full current catalog and recipe data | Economic/portion/cart checks can be VERIFIED, but UI states “no allergens assessed” and does not promise allergy safety. |
+| AC23 | Orchestrator receives *injected* candidate outcomes C01=`INFEASIBLE/BUDGET_EXCEEDED`, C02=`INFEASIBLE/SKU_OUT_OF_STOCK`, C03=`REVIEW_REQUIRED/UNKNOWN_CROSS_CONTACT` with candidate limit 3 | Evaluate exactly these 3 candidate IDs; no `VERIFIED` candidate, so conversation outcome is `NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET`. This is an **orchestration-only test** (stubbed evaluator results), not a claim that every possible menu is infeasible. |
 
 ### Demonstration set (synthetic; not production evidence)
 Start from the **pinned six-SKU fixture in §11**; grow beyond it only to cover a named acceptance scenario. For allergy tests use per-allergen evidence; the no-allergy golden case does not claim medical safety. Include positive, impossible-budget, missing-label and stale-stock cases. This is a **proposed test design**, not data already created.
@@ -203,27 +204,36 @@ The ShopMate archive is a reference, not an approved source dependency. Verify o
 
 **Request:** `request_id=REQ-001`, `conversation_revision=1`, four diners, budget 140,000 VND, dinner, `allergens=[]`, `dislikes=[]` and no dietary restrictions. Pantry: `P01` 500 g dry rice, `P02` 100 g tomatoes, `P03` 3000 ml water, with quantities confirmed. These are user statements, not independent health assessments.
 
+**Confirmed pantry identities** (stable within `REQ-001`; `food_form` means the form *before cooking*):
+
+| pantry_item_id | ingredient_id | food_form | Confirmed quantity | FoodEvidence |
+| --- | --- | --- | --- | --- |
+| P01 | rice | dry_uncooked | 500 g | FE-P01 |
+| P02 | tomato | fresh_raw | 100 g | FE-P02 |
+| P03 | water | potable_liquid | 3000 ml | FE-P03 |
+
+
 **Snapshot:** `store_id=FG-01`, `snapshot_id=S-FG-001`, `source_ref=fixture:grocery/FG-01`, `source_revision=stock-price-v1`, `observed_at=2026-11-04T06:00:00Z`, `price_valid_until=2026-11-04T08:00:00Z`, `stock_valid_until=2026-11-04T06:30:00Z`, `as_of=2026-11-04T06:10:00Z`. All sellable SKU rows below use this snapshot, its source revision and integer VND prices.
 
 **Recipes:** All four are `version=v1`, `base_servings=4`, `target_servings=4`, `data_completeness=COMPLETE`, with `source_ref=fixture:recipe/<recipe_id>@v1`; each `PlannedDish` has `portion_rationale=shared household dish`. Each listed ingredient is complete for this narrowly curated sample: there are **no unlisted seasonings, sauces or cooking inputs**. Water is included explicitly for cooking and supplied by the pantry.
 
-| Recipe | Role | Complete RecipeIngredient lines (stable component IDs) |
+| Recipe | Role | Complete RecipeIngredient lines: `component_id → ingredient_id / food_form / quantity` |
 | --- | --- | --- |
-| R01 Cơm trắng | side | c01 dry rice 400 g; c02 water 600 ml |
-| R02 Trứng chiên cà chua | main | c01 eggs 4 pcs; c02 tomatoes 300 g; c03 cooking oil 20 ml |
-| R03 Canh đậu phụ cà chua | side | c01 tomatoes 200 g; c02 tofu 400 g; c03 water 800 ml |
-| R04 Rau cải luộc | side | c01 greens 400 g; c02 water 800 ml |
+| R01 Cơm trắng | side | c01 → rice / dry_uncooked / 400 g; c02 → water / potable_liquid / 600 ml |
+| R02 Trứng chiên cà chua | main | c01 → eggs / raw_in_shell / 4 pcs; c02 → tomato / fresh_raw / 300 g; c03 → oil / edible_liquid / 20 ml |
+| R03 Canh đậu phụ cà chua | side | c01 → tomato / fresh_raw / 200 g; c02 → tofu / fresh_as_sold / 400 g; c03 → water / potable_liquid / 800 ml |
+| R04 Rau cải luộc | side | c01 → greens / fresh_raw / 400 g; c02 → water / potable_liquid / 800 ml |
 
-**Store catalog:** Every listed SKU has one canonical ingredient mapping and `food_evidence_ref=FE-<sku>`. Stock is measured in sellable packages; snapshots and sources are as defined above.
+**Store catalog:** Every listed SKU has one canonical ingredient mapping and `food_evidence_ref=FE-<sku>`. Stock is measured in sellable packages; snapshots and sources are as defined above. The deterministic join is **(ingredient_id, food_form, compatible unit)**, not the name displayed to shoppers. Water (`water`, `potable_liquid`) is fulfilled entirely from pantry and has **no SKU mapping**; if that pantry supply were insufficient, the cart could not be marked verified without a compatible source.
 
-| SKU | ingredient_id | Pack | Price (VND) | Stock packs |
-| --- | --- | --- | ---: | ---: |
-| G-RICE1000 | rice | dry rice 1000 g | 26,000 | 5 |
-| G-EGG10 | eggs | eggs 10 pcs | 30,000 | 3 |
-| G-TOM500 | tomato | tomatoes 500 g | 18,000 | 5 |
-| G-OIL500 | oil | cooking oil 500 ml | 28,000 | 3 |
-| G-TOFU200 | tofu | tofu 200 g | 12,000 | 5 |
-| G-GREEN500 | greens | greens 500 g | 16,000 | 3 |
+| SKU | ingredient_id | food_form | Sellable pack | Price (VND) | Stock packs |
+| --- | --- | --- | --- | ---: | ---: |
+| G-RICE1000 | rice | dry_uncooked | 1000 g | 26,000 | 5 |
+| G-EGG10 | eggs | raw_in_shell | 10 pcs | 30,000 | 3 |
+| G-TOM500 | tomato | fresh_raw | 500 g | 18,000 | 5 |
+| G-OIL500 | oil | edible_liquid | 500 ml | 28,000 | 3 |
+| G-TOFU200 | tofu | fresh_as_sold | 200 g | 12,000 | 5 |
+| G-GREEN500 | greens | fresh_raw | 500 g | 16,000 | 3 |
 
 **Complete FoodEvidence test records:** each row below is **one** evidence record (19 total). In addition to the fields shown, each record has `assessed_at=2026-11-04T06:00:00Z`, `allergen_assessments=[]` (because **no allergens were declared**), and an explicit `evidence_revision`: `recipe-v1` for recipe components, `request-rev1` for pantry, `label-v1` for SKU. Empty per-allergen assessments **never mean** “assessed allergen-free”; a future allergy-constrained test must provide individual assessments. Pantry sources are user assertions, not trusted supplier labels. The test records are fixtures, not actual evidence from real producers.
 
@@ -266,12 +276,14 @@ This example checks a key invariant: tomatoes used in two recipes are **aggregat
 
 **Controlled negative variations:**
 - If G-TOFU200 stock falls from 5 to **1**, the two-pack tofu line cannot be marked verified. Try a separately evidenced available alternative; otherwise surface `INFEASIBLE`.
-- If G-TOM500 price changes from **18,000** to **50,000 VND**, the unchanged basket totals **148,000 VND** and exceeds the 140,000 VND cap. Replan or return `INFEASIBLE`; never keep the old subtotal.
+- **AC09 / candidate-level only:** In a *new* compatible snapshot `S-FG-002`, set G-TOM500 price from **18,000** to **50,000 VND** while all other prices/stock remain as in `S-FG-001`. The unchanged basket costs **148,000 VND** (over 140,000), so **this candidate** is `INFEASIBLE` with `BUDGET_EXCEEDED`. This does **not** prove the whole menu search is exhausted; another menu may still meet budget.
 - **Two-allergen fixture (AC17):** Declare `SHRIMP` and `PEANUT`. For all otherwise used recipe/pantry/SKU subjects, provide synthetic per-allergen `(ingredient_presence=ABSENT, cross_contact_status=ASSESSED_ABSENT)` records with source/scope **except** `FE-G-TOM500`, which has `SHRIMP=(ABSENT, ASSESSED_ABSENT)` but `PEANUT=(ABSENT, UNKNOWN)`. Result: `REVIEW_REQUIRED` for PEANUT, never VERIFIED; these mock records test logic, not real-world safety.
 - If `as_of` is at or beyond the snapshot's `stock_valid_until` or `price_valid_until`, return `DATA_UNAVAILABLE` until authoritative refresh. Snapshot validity is a documented data contract, not an invented global TTL.
 - **Identity (AC18):** Add pantry rice package `P04` alongside `P01` and revise tomato component `(R02,v1,c02)` to `(R02,v2,c02)`. Each item must have its own evidence record; v1 evidence cannot authorize v2.
 - **Acceptance race (AC19–20):** After verification at 06:10Z, an attempted acceptance at 06:31Z fails on expired stock; changing the request to revision 2 also rejects a revision 1 acceptance. No stale cart transitions to `ACCEPTED`.
 - **Pantry boundary (AC21):** With declared allergy and missing label/evidence on `P01`, the priced list can be displayed provisionally, but the whole meal remains REVIEW_REQUIRED until the ingredient is replaced/removed or reliable evidence is provided; acknowledgment cannot resolve it.
+
+**Separate bounded-search oracle (AC23):** Use *stubbed candidate evaluator outputs* for exactly three candidate IDs, `C01 → INFEASIBLE/BUDGET_EXCEEDED`, `C02 → INFEASIBLE/SKU_OUT_OF_STOCK`, `C03 → REVIEW_REQUIRED/UNKNOWN_CROSS_CONTACT`, with candidate limit 3 and no other candidates enumerated. Assert that the planner evaluates each once, does not invent a fourth candidate and reports `NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET` at the **conversation** level. These are not full recipes and cannot replace AC01's cart-calculation fixture.
 
 ### Minimum fixture review gate
 
