@@ -39,7 +39,7 @@ The fields below describe required meaning, not a commitment to separate SQL tab
 
 ### Recipe, RecipeIngredient, PlannedDish
 
-`Recipe`: `recipe_id`, `version`, `title`, `base_servings` (>0), `ingredients[]`, `source_ref`, `data_completeness`.
+`Recipe`: `recipe_id`, `version`, `title`, `base_servings` (>0), `default_serving_role` (`main`/`side`/`shared`), `ingredients[]`, `source_ref`, `data_completeness`. The curated `base_servings` counts **role-specific portions**, not complete meals: for example, a four-portion vegetable side is a side for four diners. Role and yield must come from the reviewed recipe source, not LLM inference.
 
 `RecipeIngredient`: stable `component_id` (unique within a `recipe_id + version`), `ingredient_id`, `quantity`, `unit`, `food_form`; sauces, spice mixtures and other processed ingredients are explicitly represented. References use the **versioned composite** `(recipe_id, recipe_version, component_id)`; a change to recipe contents creates a new version and evidence cannot silently follow it. A `data_completeness` failure excludes the recipe from a verified cart, not necessarily from a clearly labeled exploratory suggestion.
 
@@ -147,9 +147,9 @@ The smallest accepted fixture must include:
 
 ## 7. Questions reserved for product review
 
-1. Accept **recipe-first with explicit per-dish serving targets** or permit the planner to invent quantities when recipe coverage is missing?
-2. Keep **purchasable-pack subtotal** as the hard budget and single-store/single-shared-meal scope?
+1. **Approved portion Option A:** automatically propose role-aware dish servings from curated recipe yields and allow user edits. Recipe-first versus SKU-first product strategy still awaits overall sign-off; never permit invented quantities.
+2. **Approved budget Option A:** actual purchasable-pack subtotal. Single-store/single-shared-meal scope remains proposed for final product sign-off.
 3. **Approved pantry Option B and purchased-SKU Option A:** keep price/stock cart verification separate from meal-allergen checks. Pantry-only uncertainty permits cart acceptance with explicit warning; any purchased-SKU allergen evidence gap blocks acceptance and triggers substitution/evidence requests. Neither outcome claims the meal is medically safe.
 4. Accept **per-snapshot expiry timestamps** rather than one global TTL for all price/stock data?
 
-All four are proposals for review, not decisions already approved.
+Decisions explicitly marked **approved** above are recorded product choices; remaining design questions are still proposed and require overall review.
