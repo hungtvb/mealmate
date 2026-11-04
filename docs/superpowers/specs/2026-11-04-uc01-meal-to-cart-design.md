@@ -61,7 +61,7 @@ flowchart TD
   J -- No --> L[Explain failure and assess alternatives]
   L --> P{Valid alternatives and retries left?}
   P -- Yes --> E
-  P -- No --> M[No feasible plan / needs review]
+  P -- No --> M[No verified candidate in evaluated set]
   K --> N{User edits?}
   N -- Yes --> B
   N -- No --> O[User reviews/accepts draft only]
@@ -97,7 +97,7 @@ Logical overview below; **[DATA_CONTRACT.md](../../DATA_CONTRACT.md) is authorit
 2. Set each `PlannedDish.target_servings` based on its role in the full menu and recipe yield, then scale its ingredients by `target_servings / base_servings` using decimal/rational arithmetic. **Do not assume four diners require four full servings of every dish.** Record the selected per-dish portion plan so a reviewer can check coverage; do not round intermediate quantities early.
 3. Aggregate only compatible `ingredient_id + measurement_dimension + food_form`; do not combine units or preparation forms by name alone.
 4. Subtract pantry quantities **only if confirmed**. “Có gạo” without amount remains unresolved; it cannot silently zero out rice requirements.
-5. For a single-SKU candidate: `packs = ceil(buy_qty / pack_amount)` after compatible unit conversion. Example **test fixture**: 600 g needed, 500 g packs at 75,000 VND, 2 packs required → 150,000 VND. With 200 g confirmed on hand, 1 pack → 75,000 VND.
+5. For a single-SKU candidate: `packs = ceil(buy_qty / pack_quantity)` after compatible unit conversion. Example **test fixture**: 600 g needed, 500 g packs at 75,000 VND, 2 packs required → 150,000 VND. With 200 g confirmed on hand, 1 pack → 75,000 VND.
 6. For MVP, choose **one verified SKU per ingredient** from a bounded set; select the lowest **total purchasable package cost** that covers the required quantity and meets stock/ingredient constraints. **If one SKU maps to multiple different canonical ingredient demands, reject that combination for UC-01 rather than charge or allocate its packs twice.** This is not a guarantee of global optimality across multi-SKU combinations.
 7. Price is computed only by trusted `sum(packs × price_vnd_per_pack)`; insufficient stock, missing prices or incompatible units are hard blockers. Stock and price facts must be from one compatible store `CatalogSnapshot`, with explicit `price_valid_until` and `stock_valid_until`. Validate at `as_of` as described in [DATA_CONTRACT.md](../../DATA_CONTRACT.md); no universal freshness TTL is assumed.
 8. Budget is a hard cap on proposed cart subtotal. If no feasible combination, say why and offer a verified cheaper menu or a request to revise budget. Do not hide the cost of unused remainder of packs.
