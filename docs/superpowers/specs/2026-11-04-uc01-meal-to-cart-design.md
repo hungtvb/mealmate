@@ -219,7 +219,31 @@ The ShopMate archive is a reference, not an approved source dependency. Verify o
 | G-TOFU200 | tofu | tofu 200 g | 12,000 | 5 |
 | G-GREEN500 | greens | greens 500 g | 16,000 | 3 |
 
-**Expected deterministic outcome:**
+**Complete FoodEvidence test records:** each row below is **one** evidence record (19 total). In addition to the fields shown, each record has `assessed_at=2026-11-04T06:00:00Z`, `allergen_assessments=[]` (because **no allergens were declared**), and an explicit `evidence_revision`: `recipe-v1` for recipe components, `request-rev1` for pantry, `label-v1` for SKU. Empty per-allergen assessments **never mean** “assessed allergen-free”; a future allergy-constrained test must provide individual assessments. Pantry sources are user assertions, not trusted supplier labels. The test records are fixtures, not actual evidence from real producers.
+
+| evidence_id | subject_type | subject_ref | ingredient_statement | source_ref |
+| --- | --- | --- | --- | --- |
+| `FE-R01-c01` | `recipe_component` | `(R01,v1,c01)` | `dry rice` | `fixture:recipe/R01@v1` |
+| `FE-R01-c02` | `recipe_component` | `(R01,v1,c02)` | `water` | `fixture:recipe/R01@v1` |
+| `FE-R02-c01` | `recipe_component` | `(R02,v1,c01)` | `eggs` | `fixture:recipe/R02@v1` |
+| `FE-R02-c02` | `recipe_component` | `(R02,v1,c02)` | `tomatoes` | `fixture:recipe/R02@v1` |
+| `FE-R02-c03` | `recipe_component` | `(R02,v1,c03)` | `cooking oil` | `fixture:recipe/R02@v1` |
+| `FE-R03-c01` | `recipe_component` | `(R03,v1,c01)` | `tomatoes` | `fixture:recipe/R03@v1` |
+| `FE-R03-c02` | `recipe_component` | `(R03,v1,c02)` | `tofu` | `fixture:recipe/R03@v1` |
+| `FE-R03-c03` | `recipe_component` | `(R03,v1,c03)` | `water` | `fixture:recipe/R03@v1` |
+| `FE-R04-c01` | `recipe_component` | `(R04,v1,c01)` | `greens` | `fixture:recipe/R04@v1` |
+| `FE-R04-c02` | `recipe_component` | `(R04,v1,c02)` | `water` | `fixture:recipe/R04@v1` |
+| `FE-P01` | `pantry_item` | `(REQ-001,P01)` | `dry rice` | `fixture:request/REQ-001@rev1` |
+| `FE-P02` | `pantry_item` | `(REQ-001,P02)` | `tomatoes` | `fixture:request/REQ-001@rev1` |
+| `FE-P03` | `pantry_item` | `(REQ-001,P03)` | `water` | `fixture:request/REQ-001@rev1` |
+| `FE-G-RICE1000` | `sku` | `(FG-01,G-RICE1000,S-FG-001)` | `dry rice` | `fixture:label/G-RICE1000@v1` |
+| `FE-G-EGG10` | `sku` | `(FG-01,G-EGG10,S-FG-001)` | `eggs` | `fixture:label/G-EGG10@v1` |
+| `FE-G-TOM500` | `sku` | `(FG-01,G-TOM500,S-FG-001)` | `tomatoes` | `fixture:label/G-TOM500@v1` |
+| `FE-G-OIL500` | `sku` | `(FG-01,G-OIL500,S-FG-001)` | `cooking oil` | `fixture:label/G-OIL500@v1` |
+| `FE-G-TOFU200` | `sku` | `(FG-01,G-TOFU200,S-FG-001)` | `tofu` | `fixture:label/G-TOFU200@v1` |
+| `FE-G-GREEN500` | `sku` | `(FG-01,G-GREEN500,S-FG-001)` | `greens` | `fixture:label/G-GREEN500@v1` |
+
+**Expected deterministic outcome:** `verification_status=VERIFIED`, `user_review_state=DRAFT`, `problems=[]`, `subtotal_vnd=116000`. Exactly five purchased SKU lines with packs `G-EGG10=1`, `G-TOM500=1`, `G-OIL500=1`, `G-TOFU200=2`, `G-GREEN500=1`. Rice and water are wholly fulfilled by pantry, no purchase line. This status verifies the specified request's **non-allergy** constraints at `as_of`; display **“No allergens were assessed; do not infer allergen safety.”**
 
 | Ingredient | Total required | Confirmed pantry | To buy | SKU pack count | Charged cost |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -229,6 +253,7 @@ The ShopMate archive is a reference, not an approved source dependency. Verify o
 | Cooking oil | 20 mL | 0 | 20 mL | 1 × G-OIL500 | 28,000 VND |
 | Tofu | 400 g | 0 | 400 g | 2 × G-TOFU200 | 24,000 VND |
 | Greens | 400 g | 0 | 400 g | 1 × G-GREEN500 | 16,000 VND |
+| Water | 2200 ml | 3000 ml | 0 ml | 0 | 0 VND |
 | **Total** | | | | **6 packages** | **116,000 VND** |
 
 This example checks a key invariant: tomatoes used in two recipes are **aggregated before** subtracting pantry supply and rounding to packs. The user is charged for purchasable packs, including unused remainder; food already covered by the pantry does not produce a cart line.
