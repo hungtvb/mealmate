@@ -1,6 +1,6 @@
 # UC-01 — Meal Request to Verified Grocery Cart (Design)
 
-**Status:** PROPOSED / AWAITING OVERALL PRODUCT SIGN-OFF — pantry **Option B**, purchased-SKU **Option A**, whole-pack budget **Option A**, automatic portion proposal **Option A** and proactive budget/stock fallback **Option A**, and **Recipe-first approach B** approved  
+**Status:** PROPOSED / AWAITING OVERALL PRODUCT SIGN-OFF — pantry **Option B**, purchased-SKU **Option A**, whole-pack budget **Option A**, automatic portion proposal **Option A** and proactive budget/stock fallback **Option A**, **Recipe-first approach B** and **single-store/shared-family-meal scope** approved  
 **Owner:** MealMate product & engineering  
 **Tracking:** [Issue #2](https://github.com/hungtvb/mealmate/issues/2)  
 **Date:** 2026-11-04
@@ -13,10 +13,11 @@ A household shopper describes one **home-cooked meal**, diners, a grocery budget
 
 **Success is not a fluent response; it is a verifiable proposal.** Failure means a confident but inaccurate cart, an unverified allergen claim, missing quantities, fabricated SKU or unintended checkout.
 
-### Assumptions / not yet approved
-- One simulated grocery store with an internally consistent catalog, price and inventory snapshot.
+### Approved first-slice scope and assumptions still under review
+- **Approved scope (2026-11-04):** **One grocery store** per candidate draft cart. Every purchased SKU and its price/stock evidence must belong to that store, with one consistent catalog snapshot. No cross-store product choice, price aggregation or split checkout. Store choice is fixed within the request unless the customer explicitly makes a material change; no automatic switch to another retailer.
+- **Approved scope (2026-11-04):** **One home-cooked shared meal for all diners**. It may contain multiple dishes, but not separate per-person menus or multiple meals. Apply the union of all declared allergies and dietary restrictions to every shared dish; retain each diner's constraints. If a common acceptable menu cannot be found, report the limitation or ask the shopper to change the request, rather than silently exclude a diner. Individual customizations are deferred.
 - **Approved budget Option A:** Currency VND. The hard budget compares the **subtotal of complete sellable packs purchased** (`Σ packs × price_vnd_per_pack`), not the amount of each ingredient consumed. The package remainder is paid for and should be visible. Tax, shipping, discounts and vouchers are outside the initial subtotal assumption, which must be visibly disclosed and remains a separate scope decision.
-- The meal is shared by all diners unless user requests otherwise. Shared dishes respect the union of explicit constraints; individual meal customization is deferred.
+- All diner counts and role-specific dish portions contribute to the single shared meal; an individual menu request is outside UC-01 and requires explicit scope clarification, not hidden substitution.
 - **Approved portion Option A:** MealMate proposes a balanced shared-meal serving plan from **curated recipe yields and serving-role guidance** for main/side/soup dishes. The shopper is not required to supply portion sizes before receiving a proposed cart; they can change any proposed dish servings later. Never ask the LLM to invent grams, recipe yields or quantities.
 - Recipes and products are curated fixtures at first. No live retailer integrations, clinical diet planning or checkout.
 - **Approved fallback Option A:** On `BUDGET_EXCEEDED` or `SKU_OUT_OF_STOCK`, proactively try another evidence-backed **SKU combination or curated recipe/menu** within the same hard constraints and `max_evaluated_candidates=3` total. Present the first eligible, reverified alternative for the shopper to choose; never raise the budget, weaken allergy/dietary restrictions or silently change an already accepted cart.
@@ -33,7 +34,7 @@ A household shopper describes one **home-cooked meal**, diners, a grocery budget
 
 ## 3. Actor, scope and interaction
 
-Primary actor: a household shopper. Optional: a supermarket operator supplies curated recipes and catalog. A staff admin interface is **out of scope**.
+Primary actor: a household shopper. Optional: a supermarket operator supplies curated recipes and catalog. A staff admin interface is **out of scope**. **Approved scope:** one store and one shared family meal per request. The shared meal can include a main, soup and sides, but not different individually personalized meals or a multi-store grocery basket.
 
 Sample request: “Bữa tối 4 người, tối đa 300.000đ; không cay, một người dị ứng tôm; nhà có 200 g gạo.”
 
@@ -185,6 +186,8 @@ Use one orchestration flow initially, not a predeclared army of agents. Superpow
 | AC28 | Draft is verified at 06:10Z; recipe R02 `v1→v2` **or** selected SKU label evidence `label-v1→label-v2` changes at 06:11Z; shopper accepts at 06:12Z while original stock/price snapshot is still valid | Atomic draft acceptance fails with `ACCEPTANCE_EVIDENCE_REVISION_CONFLICT`; do not reuse stale allergen checks or silently accept. Refresh recipe quantities/label evidence and meal warnings, reverify cart and require renewed customer confirmation (pantry B / purchased-SKU A still apply). |
 | AC29 | A prior `DRAFT` from S-FG-001 selected G-TOM500 at 18,000 VND. On refresh, S-FG-005 reprices that SKU to 50,000 VND and also offers evidenced G-TOM500-ALT at 22,000 VND/500 g | Without asking to increase budget, evaluate alternative SKU/cart as **second candidate** and propose 5 lines/6 packs totaling **120,000 VND**, preserving recipes, diner count, pantry and constraints. Original failed candidate is retained as audit evidence; alternative remains `DRAFT` until explicit approval. |
 | AC30 | A prior `DRAFT` from S-FG-001 selected 2 × G-TOFU200. On catalog refresh S-FG-004 has only 1 original tofu pack, plus evidenced G-TOFU400-ALT (400 g/pack, 27,000 VND, stock 3) | Proactively evaluate the replacement as the **second candidate** using compatible ingredient/form and a current consistent snapshot. Purchase 1 ALT tofu pack; total becomes **119,000 VND**, 5 SKU lines/5 packages; never treat original SKU as available, auto-accept or exceed candidate cap. |
+| AC31 | Recipe needs eggs and tofu, but only store FG-01 has eggs and store FG-02 has tofu at a lower price | Do not build a single `VERIFIED` draft using cross-store SKU facts or mixed store/snapshot IDs. Search within the selected store only (bounded), or report missing stock and ask customer to explicitly change store/request; never combine two checkouts. |
+| AC32 | Four diners request one dinner; one specifies shrimp allergy, another asks for a separate shrimp-containing personal dish | Do not silently output an individually tailored second meal or a shared dish violating the union of allergies. Explain single shared-meal scope and offer a shared eligible alternative or ask for a revised request. |
 
 ### Demonstration set (synthetic; not production evidence)
 Start from the **pinned six-SKU fixture in §11**; grow beyond it only to cover a named acceptance scenario. For allergy tests use per-allergen evidence; the no-allergy golden case does not claim medical safety. Include positive, impossible-budget, missing-label and stale-stock cases. This is a **proposed test design**, not data already created.
@@ -215,7 +218,7 @@ The ShopMate archive is a reference, not an approved source dependency. Verify o
 
 ### Decisions requested at review
 1. **Approved budget Option A:** cap on actual purchased full packages, not prorated ingredient consumption. Taxes, delivery and promotions remain outside the initial subtotal assumption.
-2. Confirm single-store + one shared meal for all diners as the first slice.
+2. **Approved first-slice scope:** exactly one store per verified draft cart and one shared family meal (possibly multiple dishes); no multi-store optimization or individually tailored separate meals.
 3. **Approved Option B:** separately verify cart price/stock and meal-allergen status; allow accepting an otherwise verified cart with unresolved pantry allergy evidence and visible warning. No food-safety claim.
 4. **Approved Recipe-first approach B:** select complete curated recipe/version first, derive sourced ingredient quantities, then match and verify retailer SKUs; automatic budget/stock alternatives stay within the approved three total evaluated proposals. Recipe coverage limits must be disclosed, never resolved by fabricated ingredients.
 5. **Approved portion Option A:** propose per-dish portions automatically using sourced recipe yields and serving roles (main + sides) with user-editable targets; no upfront mandatory portion questionnaire. Recipe components/condiments/pantry items still need relevant declared-allergen assessment.
@@ -319,6 +322,6 @@ This example checks a key invariant: tomatoes used in two recipes are **aggregat
 
 ### Minimum fixture review gate
 
-Before constructing a larger synthetic dataset, validate the pinned AC01 fixture and each **named variant** in §11 (including AC09, AC17–AC21, AC23–AC30) against the specified expected states. AC27/AC28 are state/evidence-race tests, not new restaurant or supplier fixtures. Additional recipe/SKU coverage should be driven by uncovered acceptance scenarios, not arbitrary row counts.
+Before constructing a larger synthetic dataset, validate the pinned AC01 fixture and each **named variant** in §11 (including AC09, AC17–AC21, AC23–AC32) against the specified expected states. AC31/AC32 specifically assert the one-store/one-shared-meal boundary. AC27/AC28 are state/evidence-race tests, not new restaurant or supplier fixtures. Additional recipe/SKU coverage should be driven by uncovered acceptance scenarios, not arbitrary row counts.
 
 **Sign-off gate:** This spec and its assumptions require user review. Once approved, create an implementation plan via Superpowers; no code, app scaffold or ShopMate import in this PR.
