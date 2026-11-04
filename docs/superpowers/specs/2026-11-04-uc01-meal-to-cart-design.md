@@ -175,4 +175,52 @@ The ShopMate archive is a reference, not an approved source dependency. Verify o
 3. Confirm unknown allergy evidence blocks `VERIFIED` but can be shown in a clearly marked `REVIEW_REQUIRED` proposal for manual inspection.
 4. Confirm recipe-first approach B and explicitly bounded alternatives.
 
+## 11. Worked data fixture (proposed test oracle)
+
+This is a **design example only**—the catalog/recipes do not yet exist in the application. All amounts are illustrative, not nutritional or medical guidance.
+
+**Request:** four diners, budget 140,000 VND, already have 500 g dry rice and 100 g tomatoes, no declared allergies or special diet. Recipe amounts below are for four diners each.
+
+| Recipe ID | Dish | Required ingredients |
+| --- | --- | --- |
+| R01 | Cơm trắng | dry rice 400 g |
+| R02 | Trứng chiên cà chua | egg 4 pieces, tomato 300 g, cooking oil 20 mL |
+| R03 | Canh đậu phụ cà chua | tomato 200 g, tofu 400 g |
+| R04 | Rau cải luộc | greens 400 g |
+
+**Candidate catalog snapshot** (all packs in stock, all prices and timestamps present; no competing candidate SKUs):
+
+| SKU | Sellable pack | Price/pack | Available packs |
+| --- | --- | ---: | ---: |
+| G-RICE1000 | dry rice 1,000 g | 26,000 VND | 5 |
+| G-EGG10 | eggs 10 pieces | 30,000 VND | 3 |
+| G-TOM500 | tomatoes 500 g | 18,000 VND | 5 |
+| G-OIL500 | cooking oil 500 mL | 28,000 VND | 3 |
+| G-TOFU200 | tofu 200 g | 12,000 VND | 5 |
+| G-GREEN500 | greens 500 g | 16,000 VND | 3 |
+
+**Expected deterministic outcome:**
+
+| Ingredient | Total required | Confirmed pantry | To buy | SKU pack count | Charged cost |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Dry rice | 400 g | 500 g | 0 g | 0 | 0 VND |
+| Eggs | 4 pcs | 0 | 4 pcs | 1 × G-EGG10 | 30,000 VND |
+| Tomatoes | 500 g | 100 g | 400 g | 1 × G-TOM500 | 18,000 VND |
+| Cooking oil | 20 mL | 0 | 20 mL | 1 × G-OIL500 | 28,000 VND |
+| Tofu | 400 g | 0 | 400 g | 2 × G-TOFU200 | 24,000 VND |
+| Greens | 400 g | 0 | 400 g | 1 × G-GREEN500 | 16,000 VND |
+| **Total** | | | | **6 packages** | **116,000 VND** |
+
+This example checks a key invariant: tomatoes used in two recipes are **aggregated before** subtracting pantry supply and rounding to packs. The user is charged for purchasable packs, including unused remainder; food already covered by the pantry does not produce a cart line.
+
+**Controlled negative variations:**
+- If G-TOFU200 stock falls from 5 to **1**, the two-pack tofu line cannot be marked verified. Try a separately evidenced available alternative; otherwise surface `INFEASIBLE`.
+- If G-TOM500 price changes from **18,000** to **50,000 VND**, the unchanged basket totals **148,000 VND** and exceeds the 140,000 VND cap. Replan or return `INFEASIBLE`; never keep the old subtotal.
+- If a shopper declares **shrimp allergy** and G-TOFU200 has `cross_contact_status=UNKNOWN` or no trusted ingredient label, return `REVIEW_REQUIRED`; do **not** mark tofu or the whole menu allergen-safe. Request reliable label/vendor confirmation or select another evidenced product.
+- If `stock_checked_at` exceeds the chosen freshness policy, return `DATA_UNAVAILABLE` until authoritative refresh. Freshness thresholds remain an explicit design decision.
+
+### Minimum fixture review gate
+
+Before constructing any larger synthetic dataset, validate this exact worked example and its four negative variations on paper. Additional recipe/SKU coverage should be driven by uncovered acceptance scenarios, not by arbitrary row counts.
+
 **Sign-off gate:** This spec and its assumptions require user review. Once approved, create an implementation plan via Superpowers; no code, app scaffold or ShopMate import in this PR.
