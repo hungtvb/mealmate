@@ -6,7 +6,7 @@
 
 **Architecture:** Start with deterministic, versioned recipe → ingredient → pantry → package/stock/price/allergen functions. Add bounded candidate fallback, then a persisted revision-aware draft/acceptance boundary, then a thin HTTP/conversation adapter. Keep providers behind tiny interfaces; use a synthetic catalog first and independently classify real-provider tests when connected. No multi-agent scaffolding, vector DB, MCP server, checkout, or reusable ShopMate source until a separate need/reuse review.
 
-**Tech Stack (proposed, NOT previously selected):** Python **3.12**, Pydantic **2.x** for typed source/request/cart records, FastAPI for a small JSON API, stdlib `sqlite3` for local draft revision/CAS, `pytest` + FastAPI TestClient/`httpx` for tests, and versioned JSON synthetic fixtures. The default `IntentInterpreter` in tests is deterministic; a live LLM-backed interpreter is a later, separately tested adapter, never a source of SKU/recipe/price facts. Pin exact dependency versions when implementing, after reviewing compatibility.
+**Tech Stack (proposed, NOT previously selected):** Python **3.12**, Pydantic **2.x** for typed source/request/cart records, FastAPI for a small JSON API, stdlib `sqlite3` for local draft revision/CAS, `pytest` + FastAPI TestClient/`httpx` for tests, and versioned JSON synthetic fixtures. CI uses a deterministic `IntentInterpreter` stub; Task 9 adds a **separately tested live LLM adapter** for actual natural-language turns (credentials/provider configuration required). The LLM is never a source of recipe quantities, allergens, SKU, stock, or price facts. Pin exact dependency versions when implementing, after reviewing compatibility.
 
 **Spec:** `docs/superpowers/specs/2026-11-04-uc01-meal-to-cart-design.md` (33 proposed acceptance cases), `docs/DATA_CONTRACT.md` (authoritative field semantics), `docs/PRODUCT.md`. Tracking: https://github.com/hungtvb/mealmate/issues/2 and design PR https://github.com/hungtvb/mealmate/pull/3.
 
@@ -45,7 +45,7 @@
 - `src/mealmate/search.py`: bounded candidate evaluator and distinct no-candidate outcomes.
 - `src/mealmate/drafts.py`: SQLite draft repository, optimistic revisions and guarded cart acceptance.
 - `src/mealmate/service.py`: request/turn mutation, orchestration of the pure functions and source adapters.
-- `src/mealmate/api.py`, `src/mealmate/intent.py`: thin FastAPI HTTP and replaceable structured intent interpreter.
+- `src/mealmate/api.py`, `src/mealmate/intent.py`, `src/mealmate/llm_intent.py`: thin FastAPI HTTP, interpreter protocol and later provider-backed structured extraction boundary.
 - `tests/test_{fixtures,quantities,cart_builder,allergens,search,drafts,api}.py`, `tests/test_uc01_e2e.py`: meaningful scenario-driven tests, not test count for its own sake.
 
 ## Task 1 — Typed records and a reproducible source fixture
@@ -146,10 +146,22 @@
 - [ ] **Step 4 — prove GREEN:** `python -m pytest -q` and `python -m compileall -q src/mealmate` → PASS. CI must execute these commands against Python 3.12; check actual workflow logs, not just checkmark status. Record scenario results with exact data source (`synthetic fixture` / `live integration`).
 - [ ] **Step 5 — commit:** `git add src/mealmate/api.py src/mealmate/intent.py tests/test_api.py tests/test_uc01_e2e.py .github/workflows/ci.yml && git commit -m "feat: expose testable draft-cart API"`.
 
+## Task 9 — Provider-backed conversational intent (after deterministic baseline)
+
+**Files:** Create `src/mealmate/llm_intent.py`, `tests/test_llm_intent.py`, `tests/test_llm_uc01_integration.py`; modify `src/mealmate/api.py` to inject the real interpreter when explicitly configured, retaining the deterministic stub for tests.
+
+**Interfaces:** `ProviderIntentInterpreter.interpret(text: str, current_request: MealRequest | None) -> ParsedTurn` implements Task 8's interpreter interface. Configuration is supplied by environment (`MEALMATE_LLM_BASE_URL`, `MEALMATE_LLM_API_KEY`, `MEALMATE_LLM_MODEL`) and never committed. A provider's response must be parsed into the existing whitelisted `ParsedTurn` schema; `CLARIFY`/typed error on missing or malformed fields rather than silent assumptions.
+
+- [ ] **Step 1 — failing tests:** `test_llm_extracts_four_diners_and_budget` with a stub provider response maps an initial Vietnamese meal request to canonical typed fields, without a fabricated recipe. `test_llm_followup_keeps_declared_allergens` preserves allergies across a material dish edit. `test_llm_explanation_is_read_only` does not increment `conversation_revision`. `test_llm_cannot_auto_accept_or_inject_sku_price` rejects a tool/model output that tries to submit/clear an allergen or overwrite verified catalog facts. `test_provider_timeout_and_bad_json` returns clear typed failure and leaves draft unchanged.
+- [ ] **Step 2 — prove RED:** `python -m pytest tests/test_llm_intent.py -q` → FAIL.
+- [ ] **Step 3 — minimal implementation:** one provider adapter with bounded timeout/retry, explicit structured-output validation and untrusted-text handling. Source-backed deterministic service recomputes all meal/cart facts after parsed intent; no direct LLM route to draft acceptance or product mutations.
+- [ ] **Step 4 — prove GREEN:** `python -m pytest -q` → PASS with stubs. Run `python -m pytest tests/test_llm_uc01_integration.py -q -m live_llm` **only** when credentials are connected; report `NOT_RUN` otherwise, not PASS. When live enabled, assert at least one end-to-end natural-language request and one follow-up preserve scoped constraints and create an accurate draft from **known synthetic catalog facts**.
+- [ ] **Step 5 — commit:** `git add src/mealmate/llm_intent.py src/mealmate/api.py tests/test_llm_intent.py tests/test_llm_uc01_integration.py && git commit -m "feat: validate natural-language meal intent"`.
+
 ## Post-task acceptance, review, and release gates
 
 - **Minimal end-to-end proof required before expanding scope:** AC01 exact sourced cart, AC06/12 quantities, AC17/21/24 allergy split, AC19/28/33 acceptance-time race/freshness, AC23/29/30 bounded fallback, AC26/27 follow-ups, AC31/32 store/shared-meal boundaries. Other AC IDs remain tracked as explicit coverage debt until tested; do **not** assert 33/33 pass merely because 33 scenario descriptions exist.
-- **Full baseline:** `python -m pytest -q`; `python -m compileall -q src/mealmate`; scenario coverage table with actual test identifiers and passing/failing statuses. Use a real-provider integration lane *only after* supplying an authoritative recipe/catalog data contract and verified credentials; skip with explicit `NOT_RUN` in local/CI reports otherwise.
+- **Full baseline:** `python -m pytest -q`; `python -m compileall -q src/mealmate`; scenario coverage table with actual test identifiers and passing/failing statuses. Before calling the feature an **AI-assisted natural-language** experience, run Task 9's provider-backed integration with configured credentials and a known catalog fixture. An unavailable live provider must be explicitly `NOT_RUN`, never claimed PASS.
 - **Quality gate after each task:** review task diff against its interfaces and ACs, run all existing tests, note trade-offs and update Issue/PR evidence. Before merge, request a fresh independent review and fix actionable issues. Do not count self-review as independent.
 - **Explicitly deferred:** multi-store optimization, individual meals, payment/checkout, reservations, medical meal guarantees, long-term allergy memory, vector DB/RAG for structured quantities, MCP transport until actual provider boundary, LangGraph/multi-agent until orchestration needs it, and UI styling. Evaluate any ShopMate reuse by ownership/license/correctness first; import nothing by default.
-- **Execution sequence:** approve this plan + technical stack → merge design PR #3 only with explicit authorization → merge stacked planning PR in order → create a separate implementation branch/PR → perform Task 1–8 via TDD and review gates. No implementation work is authorized by this planning document.
+- **Execution sequence:** approve this plan + technical stack → merge design PR #3 only with explicit authorization → merge stacked planning PR in order → create a separate implementation branch/PR → perform Tasks 1–8 via TDD, then Task 9 when a provider is configured, with review gates. No implementation work is authorized by this planning document.
