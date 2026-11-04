@@ -5,7 +5,7 @@
 **Tracking:** [Issue #2](https://github.com/hungtvb/mealmate/issues/2)  
 **Date:** 2026-11-04
 
-This is the **canonical design** for UC-01. [docs/UC-01.md](../../UC-01.md) is the short entry point. No app code or external ShopMate source may be imported based solely on this draft.
+This is the **canonical business/workflow design** for UC-01. [docs/UC-01.md](../../UC-01.md) is the short entry point; [docs/DATA_CONTRACT.md](../../DATA_CONTRACT.md) owns detailed field semantics and deterministic verification. No app code or external ShopMate source may be imported based solely on this draft.
 
 ## 1. Intent and why
 
@@ -71,7 +71,7 @@ flowchart TD
 
 ## 5. Data contracts (logical, not DB tables yet)
 
-Required fields and semantics; exact Python/JSON schemas are deferred to the implementation plan.
+Logical overview below; **[DATA_CONTRACT.md](../../DATA_CONTRACT.md) is authoritative** for field meanings, evidence, snapshot validity, verification and review statuses. Exact Python/JSON schemas remain deferred to the implementation plan.
 
 | Contract | Required fields | Invariants |
 | --- | --- | --- |
@@ -79,10 +79,11 @@ Required fields and semantics; exact Python/JSON schemas are deferred to the imp
 | `Recipe` | `recipe_id`, `version`, `title`, `base_servings`, `ingredients[]`, `tags[]`, `source_ref` | Each ingredient includes `ingredient_id`, raw quantity, canonical unit and food form, including sauces/seasonings; missing quantity or incomplete known component list blocks verified planning. |
 | `PlannedDish` | `recipe_id`, `recipe_version`, `target_servings`, `serving_role` (shared dish / main course / side dish) | Scaling uses **explicit target servings per selected dish**, not automatically `diners` for every recipe. Each dish declares its intended contribution to the meal; multi-dish portion policy requires review. |
 | `Ingredient` | `ingredient_id`, `canonical_name`, `aliases[]`, `measurement_dimension` | Conversions allowed only within compatible dimensions or via explicit preparation/yield factor |
-| `ProductSKU` | `sku`, `mapped_ingredient_ids[]`, `pack_amount`, `pack_uom`, `sellable_unit`, `price_vnd`, `stock_packs`, `stock_checked_at`, `price_checked_at` | Price refers to **one sellable package** and stock counts packages. In UC-01 a selected SKU may fulfill only one canonical ingredient demand; multi-ingredient bundle allocation is deferred to prevent double charging or double counting stock. |
-| `IngredientEvidence` | `sku`, `ingredient_statement`, `declared_allergens[]`, `cross_contact_status`, `label_source_ref`, `label_checked_at` | Product labels and credible cross-contact evidence are checked alongside recipe components and user-declared pantry ingredients. `KNOWN_PRESENT` / `ASSESSED_ABSENT` / `UNKNOWN` are **evidence states, not medical-safety certifications**; a missing warning is not proof of absence. |
+| `ProductSKU` | `sku`, `ingredient_id`, `pack_quantity`, `pack_unit`, `price_vnd_per_pack`, `stock_packs`, `catalog_snapshot_id`, `food_evidence_ref` | One SKU satisfies one ingredient demand in UC-01; price and stock are values for sellable packs in the referenced store snapshot. |
+| `FoodEvidence` | `evidence_id`, `subject_type` (`recipe_component` / `sku` / `pantry_item`), `subject_ref`, `declared_allergens[]`, `cross_contact_status`, `source_ref`, `evidence_revision` | Covers recipe, product and pantry risks. Traceable cross-contact assessments are evidence states, not medical-safety certificates; missing warnings do not establish absence. |
+| `CatalogSnapshot` | `snapshot_id`, `store_id`, `observed_at`, `price_valid_until`, `stock_valid_until`, `source_ref` | Facts share one store snapshot and pass `observed_at <= as_of < valid_until`; stale/missing validity becomes `DATA_UNAVAILABLE`. |
 | `CartLine` | `ingredient_id`, `required_qty`, `pantry_qty`, `buy_qty`, `sku`, `packs`, `price_per_pack_vnd`, `line_total_vnd`, `evidence_refs[]` | `buy_qty = max(0, required_qty - confirmed_pantry_qty)`; pack quantity covers buy_qty |
-| `DraftCart` | `cart_id`, `revision`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `verification_status`, `problems[]`, `source_snapshot_id` | Not an order; versioned and revalidated after any modification or price/stock change |
+| `DraftCart` | `cart_id`, `request_revision`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `verification_status`, `problems[]`, `snapshot_id`, `user_review_state` | Verification and explicit user acceptance are distinct. `ACCEPTED` requires a currently verified draft and is not an order. |
 
 **Data provenance:** recipe `source_ref`, ingredient mapping, product label record and catalog snapshot must be inspectable, not merely a natural-language citation added by an LLM.
 
@@ -98,16 +99,16 @@ Required fields and semantics; exact Python/JSON schemas are deferred to the imp
 4. Subtract pantry quantities **only if confirmed**. “Có gạo” without amount remains unresolved; it cannot silently zero out rice requirements.
 5. For a single-SKU candidate: `packs = ceil(buy_qty / pack_amount)` after compatible unit conversion. Example **test fixture**: 600 g needed, 500 g packs at 75,000 VND, 2 packs required → 150,000 VND. With 200 g confirmed on hand, 1 pack → 75,000 VND.
 6. For MVP, choose **one verified SKU per ingredient** from a bounded set; select the lowest **total purchasable package cost** that covers the required quantity and meets stock/ingredient constraints. **If one SKU maps to multiple different canonical ingredient demands, reject that combination for UC-01 rather than charge or allocate its packs twice.** This is not a guarantee of global optimality across multi-SKU combinations.
-7. Price is computed only by trusted `sum(packs × price_vnd)`; insufficient stock, missing prices or incompatible units are hard blockers. Stock/price freshness is validated against a **configurable, documented policy**; threshold pending data review.
+7. Price is computed only by trusted `sum(packs × price_vnd_per_pack)`; insufficient stock, missing prices or incompatible units are hard blockers. Stock and price facts must be from one compatible store `CatalogSnapshot`, with explicit `price_valid_until` and `stock_valid_until`. Validate at `as_of` as described in [DATA_CONTRACT.md](../../DATA_CONTRACT.md); no universal freshness TTL is assumed.
 8. Budget is a hard cap on proposed cart subtotal. If no feasible combination, say why and offer a verified cheaper menu or a request to revise budget. Do not hide the cost of unused remainder of packs.
 9. Allergens: apply the union of declared allergies across all diners sharing the meal; check every recipe ingredient (including sauces/seasonings), each selected SKU's label/cross-contact evidence **and any pantry ingredients relied on for that recipe**. Known incompatible ingredients are a hard rejection. Unknown/uncertain evidence returns `REVIEW_REQUIRED` and **never an allergen-safe claim**. A draft with unresolved allergy evidence cannot become `VERIFIED` or be automatically approved.
 10. Clinical context: no disease-based diet inference. Only explicit restrictions are enforceable; if insufficiently specified, ask or warn, not provide medical guarantees.
 11. No missing-data fallbacks that reinterpret unknown stock as zero, unknown price as free, or unknown allergen status as safe.
-12. After any user change, recalculate all affected quantities, prices and checks. A draft cart reflects its data snapshot and must be rechecked before any future checkout integration.
+12. After any user change, invalidate prior verification and acceptance, recalculate all affected quantities, prices and checks. A draft cart reflects its data snapshot and must be rechecked before any future checkout integration. UC-01's accepted draft is **never** an order.
 
 ### Verification statuses
 - `VERIFIED`: quantity, pack, budget, stock, price and required evidence checks satisfied for the specified snapshot. **Not a guarantee of medical allergen safety**.
-- `REVIEW_REQUIRED`: human inspection/clarification needed; not safe to claim all constraints verified.
+- `REVIEW_REQUIRED`: further trustworthy ingredient/allergen evidence or clarification required; user acknowledgment alone does not grant verified or accepted status.
 - `INFEASIBLE`: one or more hard constraints cannot be satisfied with available data/candidates.
 - `DATA_UNAVAILABLE`: authoritative data missing, stale or inconsistent.
 
@@ -117,7 +118,7 @@ A cart/result must retain **all** observed blockers as structured `problems[]` (
 - Known unsafe/forbidden ingredients and known infeasible hard constraints: reject the candidate as `INFEASIBLE`.
 - Missing authoritative facts needed to decide safety, price, stock or conversions: `DATA_UNAVAILABLE` for the affected candidate, except unresolved allergen/cross-contact evidence is explicitly `REVIEW_REQUIRED`.
 - A candidate is `VERIFIED` **only if no unresolved blockers remain**; customer review of a warning is not evidence that the product is safe.
-- If reasons overlap, show the complete list and require a fresh candidate evaluation rather than infer success from a single status. Do not use a failure of one candidate to claim that *no* possible menu is feasible.
+- If reasons overlap, show the complete list and require a fresh candidate evaluation rather than infer success from a single status. Do not use a failure of one candidate to claim that *no* possible menu is feasible. Exhausting the bounded search returns `NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET`, a **conversation outcome**, not a verified statement that every menu is infeasible.
 
 ## 7. Boundaries (why agentic, why deterministic)
 
@@ -145,7 +146,7 @@ Use one orchestration flow initially, not a predeclared army of agents. Superpow
 | AC05 | Missing price / stale stock | DATA_UNAVAILABLE with no invented subtotal or availability; fresh alternatives reverified |
 | AC06 | Need 600 g, 500 g pack at 75k | Two packages, 150k before pantry; insufficient stock blocks that SKU |
 | AC07 | “Đổi món thịt sang cá, giữ ngân sách” | Replace dish, recompute from sources, retain all other active constraints |
-| AC08 | User accepts draft | Only update draft status; cannot create order or payment |
+| AC08 | User accepts currently verified draft | Change `user_review_state` to `ACCEPTED` only when `verification_status=VERIFIED`; cannot create order or payment. Unknown allergy evidence blocks acceptance. |
 | AC09 | Conflicting/no feasible request | Explicit INFEASIBLE reasons and permitted next actions, not fabricated compliance |
 | AC10 | Price/stock changes after draft | Snapshot mismatch → revalidation before any future confirmed order |
 | AC11 | Recipe uses cooked vs raw form without yield data | Cannot assert quantity match; ask/mark data unavailable |
@@ -188,6 +189,7 @@ The ShopMate archive is a reference, not an approved source dependency. Verify o
 3. Confirm unknown allergy evidence blocks `VERIFIED` but can be shown in a clearly marked `REVIEW_REQUIRED` proposal for manual inspection.
 4. Confirm recipe-first approach B and explicitly bounded alternatives.
 5. Confirm the default shared-meal portion policy (main + side dishes) and that recipes/condiments/pantry inputs must each be assessed for declared allergies.
+6. Confirm one-store `CatalogSnapshot` with explicit fact expiry and separate, non-overridable review for unresolved allergen evidence.
 
 ## 11. Worked data fixture (proposed test oracle)
 
@@ -231,7 +233,7 @@ This example checks a key invariant: tomatoes used in two recipes are **aggregat
 - If G-TOFU200 stock falls from 5 to **1**, the two-pack tofu line cannot be marked verified. Try a separately evidenced available alternative; otherwise surface `INFEASIBLE`.
 - If G-TOM500 price changes from **18,000** to **50,000 VND**, the unchanged basket totals **148,000 VND** and exceeds the 140,000 VND cap. Replan or return `INFEASIBLE`; never keep the old subtotal.
 - If a shopper declares **shrimp allergy** and G-TOFU200 has `cross_contact_status=UNKNOWN` or no trusted ingredient label, return `REVIEW_REQUIRED`; do **not** mark tofu or the whole menu allergen-safe. Request reliable label/vendor confirmation or select another evidenced product.
-- If `stock_checked_at` exceeds the chosen freshness policy, return `DATA_UNAVAILABLE` until authoritative refresh. Freshness thresholds remain an explicit design decision.
+- If `as_of` is at or beyond the snapshot's `stock_valid_until` or `price_valid_until`, return `DATA_UNAVAILABLE` until authoritative refresh. Snapshot validity is a documented data contract, not an invented global TTL.
 
 ### Minimum fixture review gate
 
