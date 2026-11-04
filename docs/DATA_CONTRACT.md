@@ -100,7 +100,7 @@ Allergy details should remain in the active conversation by default, without lon
 
 `DraftCart`: `cart_id`, `revision`, `request_revision`, `planned_dishes[]`, `lines[]`, `subtotal_vnd`, `budget_vnd`, `snapshot_id`, `verified_at`, `cart_verification_status`, `meal_allergen_status`, `problems[]`, `user_review_state`, `accepted_at?`. Verification is scoped to cart/request revision and catalog snapshot; recipe/evidence revisions are tracked separately for meal-allergen warnings.
 
-`subtotal_vnd = Σ(line.packs × line.price_per_pack_vnd)`; charge actual purchasable packages including unused remainders. Require `subtotal_vnd <= budget_vnd` for `cart_verification_status=VERIFIED`.
+**Budget policy (approved, Option A):** `subtotal_vnd = Σ(line.packs × line.price_per_pack_vnd)`. Calculate the cost of complete sellable packages, including unused ingredient amounts; never prorate by the ingredient quantity consumed. A cart can be `VERIFIED` only when `subtotal_vnd <= budget_vnd`. Taxes, shipping and discounts are excluded from this proposed subtotal and must be disclosed.
 
 **Three independent statuses (approved pantry B + purchased-SKU A):**
 - `cart_verification_status`: `VERIFIED`, `INFEASIBLE`, `DATA_UNAVAILABLE`. This covers **purchasable SKU packs, unit compatibility, quantities, price, stock, budget and snapshot validity only**; it is not a meal-suitability claim. `VERIFIED` requires no unresolved cart-data errors.
