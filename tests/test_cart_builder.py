@@ -233,3 +233,17 @@ def test_no_unbounded_number_of_candidate_selections() -> None:
     assert len(candidates) == 1
     assert any(s.sku == "G-TOM500-ALT" for s in candidates[0].selected_skus)
     assert api().propose_sku_selections(resolution.needs, view, limit=0) == []
+
+
+def test_zero_buy_need_cannot_hide_unfulfilled_quantity() -> None:
+    fixture, dishes, resolution = golden()
+    selected = selection_for(resolution, fixture.catalog)
+    impossible = [
+        replace(n, confirmed_pantry_qty=Decimal(0))
+        if n.ingredient_id == "rice" else n
+        for n in resolution.needs
+    ]
+    altered = replace(resolution, needs=impossible)
+    cart = api().build_cart(fixture.request, dishes, altered, selected, fixture.catalog, AT)
+    assert cart.cart_verification_status == "INFEASIBLE"
+    assert "INVALID_QUANTITY_RESOLUTION" in {p["code"] for p in cart.problems}
