@@ -1,6 +1,6 @@
 # UC-01 — Meal Request to Verified Grocery Cart (Design)
 
-**Status:** PROPOSED / AWAITING OVERALL PRODUCT SIGN-OFF — pantry **Option B**, purchased-SKU **Option A**, whole-pack budget **Option A**, automatic portion proposal **Option A** and proactive budget/stock fallback **Option A** approved  
+**Status:** PROPOSED / AWAITING OVERALL PRODUCT SIGN-OFF — pantry **Option B**, purchased-SKU **Option A**, whole-pack budget **Option A**, automatic portion proposal **Option A** and proactive budget/stock fallback **Option A**, and **Recipe-first approach B** approved  
 **Owner:** MealMate product & engineering  
 **Tracking:** [Issue #2](https://github.com/hungtvb/mealmate/issues/2)  
 **Date:** 2026-11-04
@@ -26,10 +26,10 @@ A household shopper describes one **home-cooked meal**, diners, a grocery budget
 | Approach | Pros | Risks / limitation | Status |
 | --- | --- | --- | --- |
 | A. LLM invents menu and ingredient list, then attempts SKU lookup | Highly flexible wording | Unbounded ingredient amounts; poor reproducibility; easier to hallucinate | Not recommended |
-| **B. Recipe-first planning with structured recipes, then deterministic SKU/cart verification** | Traceable quantities, clear test oracle, easier constraints | Limited by coverage of recipe dataset | **Recommended; awaiting review** |
+| **B. Recipe-first planning with structured recipes, then deterministic SKU/cart verification** | Traceable quantities, clear test oracle, easier constraints | Limited by coverage of recipe dataset | **Approved by product owner for UC-01** |
 | C. SKU-first catalog optimizer generates recipes from available products | Strong stock awareness | Complicated recipe generation/quality; larger optimization surface | Deferred |
 
-**Proposed rule:** The LLM can interpret intent, pick among valid recipes, explain or suggest alternatives. It cannot create a recipe quantity or product fact without structured source evidence. A recipe is eligible only when its complete ingredient list includes sauces, seasoning and processed components where available; incomplete declarations must not be treated as allergen-free.
+**Approved Recipe-first rule (2026-11-04):** The planner selects only from sourced, curated recipes with known complete ingredient/component quantities and yields, then deterministically scales servings, aggregates compatible ingredients, deducts confirmed pantry amounts, and checks single-store SKU/pack/stock/price before offering a draft cart. If no sufficiently complete eligible recipe exists, ask for clarification or report limited coverage; **never invent a recipe or ingredient amount as a fallback**. The LLM can interpret intent, pick among valid recipes, explain or suggest alternatives. It cannot create a recipe quantity or product fact without structured source evidence. A recipe is eligible only when its complete ingredient list includes sauces, seasoning and processed components where available; incomplete declarations must not be treated as allergen-free.
 
 ## 3. Actor, scope and interaction
 
@@ -217,7 +217,7 @@ The ShopMate archive is a reference, not an approved source dependency. Verify o
 1. **Approved budget Option A:** cap on actual purchased full packages, not prorated ingredient consumption. Taxes, delivery and promotions remain outside the initial subtotal assumption.
 2. Confirm single-store + one shared meal for all diners as the first slice.
 3. **Approved Option B:** separately verify cart price/stock and meal-allergen status; allow accepting an otherwise verified cart with unresolved pantry allergy evidence and visible warning. No food-safety claim.
-4. Confirm recipe-first approach B and explicitly bounded alternatives.
+4. **Approved Recipe-first approach B:** select complete curated recipe/version first, derive sourced ingredient quantities, then match and verify retailer SKUs; automatic budget/stock alternatives stay within the approved three total evaluated proposals. Recipe coverage limits must be disclosed, never resolved by fabricated ingredients.
 5. **Approved portion Option A:** propose per-dish portions automatically using sourced recipe yields and serving roles (main + sides) with user-editable targets; no upfront mandatory portion questionnaire. Recipe components/condiments/pantry items still need relevant declared-allergen assessment.
 6. Confirm one-store `CatalogSnapshot` with explicit fact expiry. **Approved purchased-SKU Option A:** unlike pantry, an unknown allergen assessment for a selected sellable SKU blocks acceptance until a reliable assessment or evidenced substitute is available.
 7. **Approved fallback Option A:** proactively search up to three **total** sourced menu+SKU-cart candidates when over budget or out of stock; keep all constraints fixed, present reverified replacement for explicit shopper approval, and report bounded failure without claiming global impossibility.
