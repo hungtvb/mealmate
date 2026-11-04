@@ -1,0 +1,37 @@
+# Secrets / local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / frontend
+node_modules/
+.next/
+dist/
+build/
+coverage/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# Local DB / generated fixtures (explicitly whitelist any intentionally tracked fixtures)
+*.sqlite
+*.sqlite3
+*.db
+.tmp/
+temp/
