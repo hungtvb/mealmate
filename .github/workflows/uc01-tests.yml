@@ -1,0 +1,37 @@
+name: UC-01 deterministic tests
+
+on:
+  push:
+    branches:
+      - feat/uc01-task01-source-fixtures
+  pull_request:
+    branches:
+      - docs/uc01-implementation-plan
+
+permissions:
+  contents: read
+
+jobs:
+  python312:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install from clean source checkout
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -c "import mealmate; from mealmate.fixtures import load_fixture; assert load_fixture('F-UC01-POS').fixture_id == 'F-UC01-POS'"
+      - name: Run all deterministic tests
+        run: python -m pytest -q -m "not live_llm"
+      - name: Check syntax
+        run: python -m compileall -q src/mealmate
+      - name: Check wheel packaging without the repository tests directory
+        run: |
+          python -m pip wheel . --no-deps --wheel-dir dist
+          python -m venv .tmp-wheel
+          .tmp-wheel/bin/python -m pip install dist/mealmate-*.whl
+          cd /tmp
+          "$GITHUB_WORKSPACE/.tmp-wheel/bin/python" -c "from mealmate.fixtures import load_fixture; assert load_fixture('F-UC01-POS').fixture_id == 'F-UC01-POS'"
