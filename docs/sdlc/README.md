@@ -39,6 +39,15 @@ This is a lightweight SDLC documentation system, informed by common requirements
 
 Each proposed change must identify owning requirement ID, the controlling business decision, impacted API/domain/model/UI/test, acceptance scenarios, and PR/issue. Use a task-scoped PR; do not change product policy in code without product-owner review. Keep historical decisions in [DECISIONS.md](../DECISIONS.md); no parallel decision register. Keep README.md at repo root brief. Evidence and task status belong to GitHub Issues/PRs, not generated screenshots/log dumps in git.
 
+## P0 unresolved technical contract gates (to be approved before implementation)
+
+- Public request DTOs vs trusted internal `MealRequest`/`DraftCart`: client cannot set IDs, revisions, verification basis or server time.
+- Selected-store persistence/revision: current model lacks a store field, while UC-01 prohibits hidden store changes.
+- Session ownership/access; local-only binding until public authentication exists; read-only GET must not imply a stale quote is acceptable.
+- Stable acceptance idempotency / concurrency and candidate outcome naming before OpenAPI freeze.
+
+See [LLD_API.md](LLD_API.md) and [TRACEABILITY.md](TRACEABILITY.md). These are engineering review findings, **not new approved product-policy decisions**.
+
 ## Immediate handoff gate
 
 Read [CODEX_HANDOFF.md](CODEX_HANDOFF.md). Codex may audit, plan and review against this **draft** package; it must not interpret this document PR as approval to implement, merge or deploy.
