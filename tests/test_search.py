@@ -209,6 +209,8 @@ def test_allergy_ineligible_original_yields_evidence_backed_alt() -> None:
     assert second.cart.cart_verification_status == "VERIFIED"
     assert second.allergy.meal_allergen_status == "ASSESSED_NO_KNOWN_CONFLICT"
     assert second.allergy.acceptance_blocked is False
+    assert first.cart.meal_allergen_status == first.allergy.meal_allergen_status
+    assert second.cart.meal_allergen_status == second.allergy.meal_allergen_status
     assert second.cart.subtotal_vnd == 120000
     assert result.proposal is second
     assert result.proposal.cart.user_review_state == "DRAFT"
