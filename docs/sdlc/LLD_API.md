@@ -67,20 +67,18 @@ If required conversions are unknown or authoritative facts missing, preserve UNK
 
 ~~~json
 {
-  "request_id": "REQ-001",
-  "conversation_revision": 1,
+  "selected_store_id": "FG-01",
   "diners": 4,
   "meal_type": "dinner",
   "budget_vnd": 140000,
   "dislikes": [],
   "allergens": [],
   "dietary_restrictions": [],
-  "pantry": [],
-  "selected_store_id": "FG-01"
+  "pantry": []
 }
 ~~~
 
-NOTE: This is **not** a valid public DTO or golden-fixture input. `request_id` and `conversation_revision` are server-owned internal fields in the illustrative internal model and must not be client-controlled. `selected_store_id` is illustrative context not yet represented in PR #8 MealRequest; resolve its persisted/revisioned binding before implementing Task 6/8. Golden fixture includes a different pantry; the JSON above is **not** golden AC01 fixture and must not be used to assert 116,000 VND.
+NOTE: This is a **proposed external create DTO sketch**, not an implemented API schema or golden fixture. Server-generated `request_id`, `cart_id`, `conversation_revision` and cart revision are deliberately absent. `selected_store_id` is illustrative but not yet represented in PR #8 `MealRequest`; resolve its persistent and revisioned binding before Task 6/8. The approved golden fixture includes confirmed pantry items, so this empty-pantry sample must not be used to assert the AC01 subtotal. Golden fixture includes a different pantry; the JSON above is **not** golden AC01 fixture and must not be used to assert 116,000 VND.
 
 ~~~json
 {
