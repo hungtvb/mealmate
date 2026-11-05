@@ -35,6 +35,12 @@
 
 **SRS-12 UI:** future P1 UI presents current selected store, portions, required/at-home/to-buy, SKU packs, unused remainder, source timestamps, all blockers and separate statuses; explicit accept CTA only for eligible draft. Trace FR-10/16 and [UX spec](UX_SPEC.md). UI implementation requires separate design approval.
 
+**SRS-13 Identity, ownership and clock (proposed interface requirement):** User-facing create/edit APIs must not trust client-minted request/cart IDs, arbitrary revision counters, verification status, price source facts or timestamps. The service assigns persistent identifiers and versions; validation/acceptance uses trusted UTC server time with source expiry. Fixed clocks are injected only for deterministic tests. Trace FR-01/12/13 and security/contract tests; exact DTO schema needs engineering approval.
+
+**SRS-14 Selected-store binding (open design gate):** approved one-store policy requires the selected store to be persisted with the active request and part of its revision/verification basis. Current `MealRequest` data model does not contain it. Resolve session/request schema before Task 6/8; changing store is an explicit applied material change, never implicit fallback. Trace FR-01/06/11 and AC31.
+
+**SRS-15 Session access and query staleness:** External request handlers must enforce owner isolation before public deployment; opaque cart IDs are not sufficient auth. Read-only retrieval does not change effective request/cart revisions but must expose snapshot expiry and prevent stale verification being represented as currently acceptable. Trace FR-02/07/12/13 and AC19/33.
+
 ## Error and state semantics
 
 | Domain | Allowed state / outcome | Invariant |
@@ -61,6 +67,7 @@
 | NFR-08 Performance | Each search bounded to 3 complete candidate evaluations; model/provider calls have bounded timeouts | Instrument and test bound; any latency SLO remains TBD with measured baseline |
 | NFR-09 Maintainability | Separate deterministic domain from source adapters, HTTP, optional intent LLM; no speculative frameworks | Code-review responsibility/DI check |
 | NFR-10 Accessibility (P1) | Semantic form controls, keyboard actions, readable statuses not conveyed by color only | Accessibility walkthrough after UX approval |
+| NFR-11 Public API ownership and time authority | Server-issued IDs/revisions, owner-scoped session access and server UTC clock for freshness; client cannot forge verification basis or `as_of` | Spoofing, IDOR, clock manipulation and stale GET/ACCEPT tests before exposure |
 
 **Intentionally TBD:** production SLO, data retention duration outside local session, traffic volume, customer auth provider, deployment infrastructure, retailer API SLAs. Do not encode arbitrary defaults as business-approved facts.
 
