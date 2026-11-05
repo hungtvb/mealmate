@@ -56,11 +56,14 @@ Present: source models and ports, packaged synthetic fixture, quantity/pantry re
 4. Current PR #8 pyproject.toml puts FastAPI/httpx under dev extra; when building Task 8 public runtime, review actual runtime dependency packaging rather than relying on CI's dev environment.
 5. No live retailer/allergy provenance authenticity assurance or real LLM test evidence in core stack. Report these as limitations instead of suggesting all UC-01 has passed.
 
+5. **Task 6/8 DTO and store-binding gap:** a public `POST /v1/drafts` must not trust client-supplied request/cart IDs, revisions, verification state or `as_of`. Current `MealRequest` has no selected-store field; define server-owned identities and persisted selected-store context before API work. Pin this with contract tests.
+6. **External access boundary:** implement owner-scoped session authorization before exposing routes publicly. Until then, use only a loopback-bound synthetic local API; GET must remain non-mutating but show stale source status, and repeated accepts must obey CAS.
+
 ## Recommended execution order
 
 **Phase A (audit/approval):** review current stacked diffs, plan/stack approval status and this SDLC package; create a concrete residual issue list and ask for needed technical approval (no repetitive reopening of accepted business-policy A/B decisions).
 
-**Phase B (after approved plan):** close existing PR #5–#8 reviews and obtain explicit owner authorization to merge in order; implement Task 6 (persisted effective request + current draft and version CAS), Task 7 (revalidation/acceptance/attested refresh), Task 8 (typed API and real HTTP→service→SQLite synthetic E2E), Task 9 (optional real-provider structured intent). Each task has independent PR and test evidence.
+**Phase B (after approved plan and the Task 6/8 contract gates above):** close existing PR #5–#8 reviews and obtain explicit owner authorization to merge in order; implement Task 6 (persisted effective request + current draft and version CAS), Task 7 (revalidation/acceptance/attested refresh), Task 8 (typed API and real HTTP→service→SQLite synthetic E2E), Task 9 (optional real-provider structured intent). Each task has independent PR and test evidence.
 
 **Phase C (separately approved):** review P1 UX and frontend plan; do not implement live payment, multi-store, medical diet guarantees or multi-agent platform without new scope.
 
