@@ -239,8 +239,17 @@ def search_candidates(
             if had_economic_verified else "NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET",
         )
 
-    if has_source_ineligible_recipe(first_candidate):
-        # Changing SKU IDs cannot cure a recipe no longer eligible for the request.
+    non_sku_evidence_blocker = (
+        first_result is not None
+        and first_result.allergy is not None
+        and any(
+            problem.severity == "BLOCKER" and problem.subject_ref.kind != "sku"
+            for problem in first_result.allergy.problems
+        )
+    )
+    if has_source_ineligible_recipe(first_candidate) or non_sku_evidence_blocker:
+        # Changing SKU IDs cannot resolve a blocked recipe/pantry subject,
+        # nor cure a recipe no longer eligible for the current request.
         replacements = []
     else:
         try:
