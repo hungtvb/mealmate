@@ -80,7 +80,7 @@ If required conversions are unknown or authoritative facts missing, preserve UNK
 }
 ~~~
 
-NOTE: selected_store_id is **illustrative context**, not yet a field in PR #8 MealRequest model; use a reviewed input/store-scoping contract before implementing. Golden fixture includes a different pantry; the JSON above is **not** golden AC01 fixture and must not be used to assert 116,000 VND.
+NOTE: This is **not** a valid public DTO or golden-fixture input. `request_id` and `conversation_revision` are server-owned internal fields in the illustrative internal model and must not be client-controlled. `selected_store_id` is illustrative context not yet represented in PR #8 MealRequest; resolve its persisted/revisioned binding before implementing Task 6/8. Golden fixture includes a different pantry; the JSON above is **not** golden AC01 fixture and must not be used to assert 116,000 VND.
 
 ~~~json
 {
@@ -93,6 +93,20 @@ NOTE: selected_store_id is **illustrative context**, not yet a field in PR #8 Me
 ~~~
 
 Response envelope is a proposal; fields/reason codes should be standardized with actual Task 7 types and [TRACEABILITY](TRACEABILITY.md).
+
+## Engineering contract decisions required before Task 6/8 implementation
+
+The following are **open interface decisions**, not already approved runtime behavior. Resolve them in the reviewed technical implementation plan and pin the resulting API tests *before* code changes:
+
+1. **Server-owned identity/version:** External create requests must not be permitted to fabricate `request_id`, `cart_id`, `conversation_revision`, `DraftCart.revision`, `verification_basis` or `user_review_state`. Define separate create/edit request DTOs from internal Pydantic `MealRequest`/`DraftCart` records. IDs and initial revisions are minted or assigned by the trusted service; clients submit only whitelisted preferences, known pantry details, store selection and expected versions on edits. Existing typed internal fixtures are not a safe public create schema by themselves.
+2. **Selected-store binding:** Approved UC-01 requires one selected store, stable across request revisions until a user-applied material change. Existing `MealRequest` has no `store_id` field. Decide and implement a first-class, persisted `selected_store_id` in the effective session/request context, pinned to the snapshot and versioned with the rest of the effective request. Reject or clarify absent/unsupported store. A chat statement or query parameter must never silently switch it.
+3. **Time authority:** Source verification and acceptance use a **trusted server UTC clock** and source-provided timestamp/expiry, not client-supplied `as_of`; injection of a fixed `as_of` is permitted in deterministic tests through an internal clock abstraction only. Unknown future stock is never inferred.
+4. **Session ownership:** Before exposing to other machines or users, require authenticated principal and owner-scoped lookup/authorization on every session/cart route, including GET/PATCH/ACCEPT/DELETE. Opaque `cart_id` alone is not authorization. A local-only fixture server must stay bound to loopback / otherwise inaccessible until this control exists.
+5. **Idempotency and concurrency:** Concurrent and duplicated accept requests must not create duplicate side effects or bypass source checks. Decide stable repeated-accept response semantics; single request+draft CAS is mandatory. A stale expected revision must return an explicit conflict state and leave the current draft unchanged.
+6. **Read-only GET and freshness:** GET must not mutate request revision or acceptance, and must not continue to display an expired quote as currently eligible without surfacing expiry/verification timestamp. At explicit ACCEPT, the server always rechecks source and evidence independently of any GET result.
+7. **Error contract:** Approve stable problem codes, 4xx/5xx mapping, expired/deleted-session behavior and outcome names before freezing OpenAPI. In particular, align the canonical `NO_ACCEPTABLE_CART_IN_EVALUATED_SET` name with PR #8's `NO_ALLERGY_ELIGIBLE_CANDIDATE_IN_EVALUATED_SET` after review—not by an undocumented silent rename.
+
+No developer may infer approval of these details from illustrative JSON or API routes in this document.
 
 ## Revision and acceptance state machine
 
