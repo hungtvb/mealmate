@@ -57,6 +57,7 @@ class _SubjectUse:
     subject_ref: FoodSubjectRef
     expected_source_ref: str | None = None
     expected_evidence_id: str | None = None
+    identity_matches: bool = True
 
 
 def assess_allergens(
@@ -79,14 +80,40 @@ def assess_allergens(
         return AllergyAssessment("NOT_ASSESSED", False, [], [])
 
     subjects = [
-        _SubjectUse(component.subject_ref, expected_source_ref=component.source_ref)
+        _SubjectUse(
+            component.subject_ref,
+            expected_source_ref=component.source_ref,
+            identity_matches=(
+                component.subject_ref.kind == "recipe_component"
+                and component.subject_ref.parts == (
+                    component.recipe_id, component.recipe_version, component.component_id
+                )
+            ),
+        )
         for component in resolution.recipe_component_uses
     ]
     subjects.extend(
-        _SubjectUse(alloc.subject_ref, expected_evidence_id=alloc.food_evidence_ref)
+        _SubjectUse(
+            alloc.subject_ref,
+            expected_evidence_id=alloc.food_evidence_ref,
+            identity_matches=(
+                alloc.request_id == request.request_id
+                and alloc.subject_ref.kind == "pantry_item"
+                and alloc.subject_ref.parts == (alloc.request_id, alloc.pantry_item_id)
+            ),
+        )
         for alloc in resolution.pantry_allocations
     )
-    subjects.extend(_SubjectUse(line.food_subject_ref) for line in lines)
+    subjects.extend(
+        _SubjectUse(
+            line.food_subject_ref,
+            identity_matches=(
+                line.food_subject_ref.kind == "sku"
+                and line.food_subject_ref.parts[1] == line.sku
+            ),
+        )
+        for line in lines
+    )
 
     problems: list[AllergyProblem] = []
     revisions: list[EvidenceRevision] = []
@@ -105,6 +132,14 @@ def assess_allergens(
 
     for use in subjects:
         subject = use.subject_ref
+        # Do not trust a caller-supplied typed subject when its identity
+        # contradicts the source recipe version or pantry package ID.
+        if not use.identity_matches:
+            for allergen in allergens:
+                add_issue("FOOD_EVIDENCE_BINDING_MISMATCH", subject, allergen,
+                          "Evidence subject does not match the selected recipe, pantry item or SKU",
+                          force_block=True)
+            continue
         key = subject.kind, subject.parts
         if key in examined:
             if examined[key] != use:
