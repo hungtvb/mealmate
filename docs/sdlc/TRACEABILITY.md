@@ -45,7 +45,7 @@
 | 22 | No allergens => NOT_ASSESSED | 08/10 | T4/8 | Allergen/UI text |
 | 23 | Exactly 3 candidates, no C04 | 09 | T5 | Bounded search |
 | 24 | Unknown purchased SKU blocks accept | 08/12 | T4/7/8 | Acceptance E2E |
-| 25 | Evinced tomato alternate 120000 | 06/08/09 | T3–5, T7 | Substitution |
+| 25 | Evidenced tomato alternate 120000 | 06/08/09 | T3–5, T7 | Substitution |
 | 26 | R04 edit 4→6, 132000, 7 packs | 04/05/11 | T2/6/8 | Session/cart E2E |
 | 27 | Explanation/hypothetical read-only | 02/11 | T6/8/9 | Session/chat E2E |
 | 28 | Recipe/label revision prevents acceptance | 07/08/12 | T4/7/8 | Acceptance race |
@@ -79,5 +79,9 @@ A test existing in open PR #5–#8 counts as **code present in branch**, not mer
 | GAP-06 Live provider/retailer verification absent | Fixture-backed source, no llm_intent.py or retailer adapter | T9 live lane and future source integration |
 | GAP-07 Consumer UX not designed/approved for code | P1 UX_SPEC is proposal | UX review and UI implementation plan |
 | GAP-08 Exact API payload/status code freeze pending | Task 8 interfaces proposed, not implemented | Contract tests and engineering approval |
+| GAP-09 Server-owned identity, revision and as-of contract | Internal MealRequest has request_id/revision; proposed public POST example could be mistaken for client-writable fields | Create external DTOs, trusted clock; spoofing tests before Task 8 |
+| GAP-10 Selected store is not in current MealRequest | SRS requires one stable selected store, but source model has no persisted store field | Review request/session context field and revision behavior before T6/T8 |
+| GAP-11 Session authorization and stale read semantics not frozen | Draft ID alone cannot grant access; read-only GET may be old after source expiry | Scope local-only API; auth gate before public; stale GET/ACCEPT tests |
+| GAP-12 Duplicate acceptance and error vocabulary | CAS required but status codes/idempotency and outcome string not finalized | Test concurrent duplicate acceptance; freeze outcome and HTTP mapping |
 
 The gap list is a **dated review backlog**, not all confirmed runtime defects. Do not close from a prose statement; attach test and reviewer evidence.
