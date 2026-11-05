@@ -326,3 +326,31 @@ def test_different_recipe_version_is_not_silently_swapped_by_sku_fallback() -> N
         (d.recipe_id, d.recipe_version) for d in dishes
     ]
     assert result.proposal.cart.request_revision == old.request.conversation_revision
+
+
+def test_preferred_recipe_filtered_out_by_source_cannot_be_proposed() -> None:
+    old, dishes, choice = golden()
+
+    class ExcludedRecipeSource(FixtureSources):
+        def list_eligible(self, request, as_of):
+            return [r for r in super().list_eligible(request, as_of) if r.recipe_id != "R02"]
+
+    source = ExcludedRecipeSource(old)
+    result = invoke(
+        old, search_module().Candidate(dishes=dishes, selection=choice),
+        source=source,
+    )
+    assert result.proposal is None
+    assert len(result.attempts) >= 1
+    assert result.attempts[0].cart.cart_verification_status == "INFEASIBLE"
+    assert "RECIPE_NOT_ELIGIBLE" in {p["code"] for p in result.attempts[0].cart.problems}
+
+
+def test_fallback_never_raises_the_customer_hard_budget() -> None:
+    old, dishes, choice = golden()
+    req = old.request.model_copy(update={"budget_vnd": 1000})
+    result = invoke(old, search_module().Candidate(dishes=dishes, selection=choice), request=req)
+    assert result.proposal is None
+    assert 1 <= len(result.attempts) <= 3
+    assert all(a.cart.budget_vnd == 1000 for a in result.attempts)
+    assert all(a.cart.cart_verification_status != "VERIFIED" for a in result.attempts)
