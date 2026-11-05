@@ -284,3 +284,27 @@ def test_missing_pantry_evidence_warns_but_missing_sku_evidence_blocks() -> None
     relevant = [p for p in result.problems if p.code == "FOOD_EVIDENCE_MISSING"]
     assert any(p.subject_ref.kind == "pantry_item" and p.severity == "WARNING" for p in relevant)
     assert any(p.subject_ref.kind == "sku" and p.severity == "BLOCKER" for p in relevant)
+
+
+def test_sku_assessment_must_be_scoped_to_sku_not_pantry() -> None:
+    bundle = scoped_evidence(load_fixture("F-UC01-POS"))
+    tomato = next(e for e in bundle.evidence if e.evidence_id == "FE-G-TOM500")
+    bundle = with_evidence(bundle, "FE-G-TOM500", allergen_assessments=[
+        a.model_copy(update={"assessment_scope": "pantry_item"})
+        for a in tomato.allergen_assessments
+    ])
+    request, resolution, cart, sources = prepare(bundle)
+    result = evaluator()(request, resolution, cart.lines, sources, AS_OF)
+    assert result.acceptance_blocked
+    assert result.meal_allergen_status == "REVIEW_REQUIRED"
+    assert any(p.code == "ALLERGEN_SCOPE_MISMATCH" and p.subject_ref.kind == "sku" for p in result.problems)
+
+
+def test_pantry_item_cannot_reuse_other_package_evidence_id() -> None:
+    bundle = scoped_evidence(load_fixture("F-UC01-POS"))
+    bundle = with_evidence(bundle, "FE-P01", evidence_id="FE-P99")
+    request, resolution, cart, sources = prepare(bundle)
+    result = evaluator()(request, resolution, cart.lines, sources, AS_OF)
+    assert result.meal_allergen_status == "REVIEW_REQUIRED"
+    assert not result.acceptance_blocked
+    assert any(p.code == "FOOD_EVIDENCE_ID_MISMATCH" and p.subject_ref.parts == ("REQ-001", "P01") for p in result.problems)
