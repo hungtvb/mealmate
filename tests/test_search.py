@@ -354,3 +354,17 @@ def test_fallback_never_raises_the_customer_hard_budget() -> None:
     assert 1 <= len(result.attempts) <= 3
     assert all(a.cart.budget_vnd == 1000 for a in result.attempts)
     assert all(a.cart.cart_verification_status != "VERIFIED" for a in result.attempts)
+
+
+@pytest.mark.parametrize(
+    "restriction",
+    [{"dislikes": ["eggs"]}, {"dietary_restrictions": ["VEGAN"]}],
+)
+def test_synthetic_recipe_source_must_not_ignore_unverified_food_constraints(restriction) -> None:
+    bundle, dishes, choice = golden()
+    request = bundle.request.model_copy(update=restriction)
+    result = invoke(bundle, search_module().Candidate(dishes=dishes, selection=choice), request=request)
+    assert result.proposal is None
+    assert result.attempts
+    assert result.attempts[0].cart.cart_verification_status == "INFEASIBLE"
+    assert "RECIPE_NOT_ELIGIBLE" in {p["code"] for p in result.attempts[0].cart.problems}
