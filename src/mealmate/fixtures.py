@@ -59,6 +59,11 @@ class FixtureSources:
         return next((r for r in self.bundle.recipes if r.recipe_id == recipe_id and r.version == version), None)
 
     def list_eligible(self, request: MealRequest, as_of: datetime) -> list[Recipe]:
+        # This synthetic fixture has no sourced dislike alias taxonomy or
+        # dietary-eligibility evidence. Fail closed instead of treating every
+        # COMPLETE recipe as satisfying restrictions we cannot validate.
+        if request.dislikes or request.dietary_restrictions:
+            return []
         return [r for r in self.bundle.recipes if r.data_completeness == "COMPLETE"]
 
     def current_version(self, recipe_id: str, as_of: datetime) -> str | None:
