@@ -370,3 +370,61 @@ def test_synthetic_recipe_source_must_not_ignore_unverified_food_constraints(res
     assert result.attempts
     assert result.attempts[0].cart.cart_verification_status == "INFEASIBLE"
     assert "RECIPE_NOT_ELIGIBLE" in {p["code"] for p in result.attempts[0].cart.problems}
+
+
+def test_known_recipe_allergen_conflict_switches_curated_menu_before_sku_alts() -> None:
+    old, dishes, choice = golden()
+    changed = refreshed(
+        old, "S-FG-003", "stock-price-v3", {},
+        extra=[
+            ("G-TOM500-ALT", "G-TOM500", {"price_vnd_per_pack": 22000}),
+            ("G-TOM500-ALT2", "G-TOM500", {"price_vnd_per_pack": 23000}),
+        ],
+        allergens=("PEANUT",),
+    )
+    safer_main = Recipe(
+        recipe_id="R06", version="v1", title="Rau cải xào",
+        base_servings=4, default_serving_role="main",
+        ingredients=[
+            RecipeIngredient(component_id="c01", ingredient_id="greens", quantity=400,
+                             unit="g", food_form="fresh_raw"),
+            RecipeIngredient(component_id="c02", ingredient_id="oil", quantity=20,
+                             unit="ml", food_form="edible_liquid"),
+        ],
+        source_ref="fixture:recipe/R06@v1", data_completeness="COMPLETE",
+    )
+    new_labels = []
+    for component_id, from_id in (("c01", "FE-R04-c01"), ("c02", "FE-R02-c03")):
+        source_record = next(e for e in changed.evidence if e.evidence_id == from_id)
+        new_labels.append(source_record.model_copy(update={
+            "evidence_id": f"FE-R06-{component_id}",
+            "subject_ref": FoodSubjectRef(kind="recipe_component", parts=("R06", "v1", component_id)),
+            "source_ref": "fixture:recipe/R06@v1",
+            "allergen_assessments": [
+                a.model_copy(update={"source_ref": "fixture:recipe/R06@v1"})
+                for a in source_record.allergen_assessments
+            ],
+        }))
+    source_records = []
+    for e in changed.evidence:
+        if e.evidence_id == "FE-R02-c01":
+            source_records.append(e.model_copy(update={"allergen_assessments": [
+                a.model_copy(update={"ingredient_presence": "PRESENT"})
+                for a in e.allergen_assessments
+            ]}))
+        else:
+            source_records.append(e)
+    changed = changed.model_copy(update={
+        "recipes": [*changed.recipes, safer_main],
+        "evidence": [*source_records, *new_labels],
+    })
+    request = changed.request.model_copy(update={"allergens": ["PEANUT"]})
+    prior = search_module().Candidate(dishes=dishes, selection=choice)
+    result = invoke(changed, prior, request=request)
+    assert result.proposal is not None
+    assert [a.candidate_id for a in result.attempts] == ["C01", "C02"]
+    assert result.attempts[0].allergy.meal_allergen_status == "KNOWN_CONFLICT"
+    assert any(d.recipe_id == "R06" for d in result.proposal.candidate.dishes)
+    assert result.proposal.allergy.meal_allergen_status == "ASSESSED_NO_KNOWN_CONFLICT"
+    assert result.proposal.cart.cart_verification_status == "VERIFIED"
+    assert result.proposal.cart.user_review_state == "DRAFT"
