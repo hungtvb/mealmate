@@ -34,12 +34,12 @@ def scoped_evidence(bundle, allergens=("PEANUT",)):
     })
 
 
-def with_evidence(bundle, evidence_id, **changes):
+def with_evidence(bundle, target_id, **changes):
     records = [
-        e.model_copy(update=changes) if e.evidence_id == evidence_id else e
+        e.model_copy(update=changes) if e.evidence_id == target_id else e
         for e in bundle.evidence
     ]
-    assert any(e.evidence_id == evidence_id for e in bundle.evidence)
+    assert any(e.evidence_id == target_id for e in bundle.evidence)
     return bundle.model_copy(update={"evidence": records})
 
 
