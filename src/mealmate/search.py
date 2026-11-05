@@ -173,6 +173,10 @@ def search_candidates(
         )
         first_candidate = Candidate(dishes=list(preferred.dishes), selection=rebased)
 
+    allowed_recipes = {(r.recipe_id, r.version) for r in eligible}
+    def has_source_ineligible_recipe(candidate: Candidate) -> bool:
+        return any((d.recipe_id, d.recipe_version) not in allowed_recipes for d in candidate.dishes)
+
     attempts: list[CandidateAttempt] = []
     seen: set[tuple] = set()
     had_economic_verified = False
@@ -190,6 +194,14 @@ def search_candidates(
         cart = build_cart(
             request, candidate.dishes, resolution, candidate.selection, catalog, as_of
         )
+        if has_source_ineligible_recipe(candidate):
+            # A price/stock-valid draft is still disallowed if the recipe source
+            # no longer marks its exact version eligible for this request.
+            cart = cart.model_copy(update={
+                "cart_verification_status": "INFEASIBLE",
+                "verified_at": None,
+                "problems": [*cart.problems, {"code": "RECIPE_NOT_ELIGIBLE"}],
+            })
         revision = len(attempts) + 1
         cart = cart.model_copy(update={
             "revision": revision,
@@ -223,11 +235,15 @@ def search_candidates(
             if had_economic_verified else "NO_VERIFIED_CANDIDATE_IN_EVALUATED_SET",
         )
 
-    try:
-        fixed_needs = resolve_needs(request, first_candidate.dishes, recipe_source).needs
-        replacements = propose_sku_selections(fixed_needs, catalog, limit=limit + 1)
-    except (RecipeCoverageError, UnitConversionMissing):
+    if has_source_ineligible_recipe(first_candidate):
+        # Changing SKU IDs cannot cure a recipe no longer eligible for the request.
         replacements = []
+    else:
+        try:
+            fixed_needs = resolve_needs(request, first_candidate.dishes, recipe_source).needs
+            replacements = propose_sku_selections(fixed_needs, catalog, limit=limit + 1)
+        except (RecipeCoverageError, UnitConversionMissing):
+            replacements = []
 
     for selection in replacements:
         candidate = Candidate(dishes=list(first_candidate.dishes), selection=selection)
