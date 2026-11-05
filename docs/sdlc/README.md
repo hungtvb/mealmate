@@ -20,7 +20,7 @@ This is a lightweight SDLC documentation system, informed by common requirements
 
 1. Current applicable [AGENTS.md](../../AGENTS.md) controls agent workflow and repo hygiene; reread before every task.
 2. Approved business choices in [PRODUCT.md](../PRODUCT.md), [DECISIONS.md](../DECISIONS.md), the [UC-01 design](../superpowers/specs/2026-11-04-uc01-meal-to-cart-design.md), and [DATA_CONTRACT.md](../DATA_CONTRACT.md) control product behavior and field semantics.
-3. The separate [UC-01 implementation plan](../superpowers/plans/2026-11-04-uc01-first-vertical-slice.md) proposes task interfaces and stack. It is on PR #4's branch, **not yet approved**.
+3. The separate [UC-01 implementation plan](https://github.com/hungtvb/mealmate/pull/4) proposes task interfaces and stack. It is on PR #4's branch, **not yet approved**.
 4. This SDLC package organizes requirements, lifecycle and handoff but **does not supersede** canonical UC-01 rules. Conflicts must be logged and resolved explicitly before implementing.
 5. Source code/tests and PR metadata establish **actual implementation status**, never the mere presence of documentation.
 
