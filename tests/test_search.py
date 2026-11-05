@@ -55,9 +55,10 @@ def refreshed(bundle, snapshot_id, revision, updates, extra=None, allergens=()):
         cat["skus"].append(row)
     view = CatalogView.model_validate(cat)
     originals = {e.subject_ref.parts[1]: e for e in bundle.evidence if e.subject_type == "sku"}
+    alternative_origins = {sku: original for sku, original, _ in (extra or [])}
     new_evidence = []
     for product in view.skus:
-        template = originals.get(product.sku) or originals[product.sku.split("-ALT")[0]]
+        template = originals.get(product.sku) or originals[alternative_origins[product.sku]]
         new_evidence.append(template.model_copy(update={
             "evidence_id": f"FE-{snapshot_id}-{product.sku}",
             "subject_ref": product.food_evidence_ref,
