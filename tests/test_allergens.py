@@ -308,3 +308,39 @@ def test_pantry_item_cannot_reuse_other_package_evidence_id() -> None:
     assert result.meal_allergen_status == "REVIEW_REQUIRED"
     assert not result.acceptance_blocked
     assert any(p.code == "FOOD_EVIDENCE_ID_MISMATCH" and p.subject_ref.parts == ("REQ-001", "P01") for p in result.problems)
+
+
+def test_recipe_v2_cannot_be_cleared_using_v1_component_subject() -> None:
+    request, resolution, cart, sources = prepare()
+    uses = [
+        replace(c, recipe_version="v2") if c.recipe_id == "R02" and c.component_id == "c02" else c
+        for c in resolution.recipe_component_uses
+    ]
+    changed = replace(resolution, recipe_component_uses=uses)
+    result = evaluator()(request, changed, cart.lines, sources, AS_OF)
+    assert result.meal_allergen_status == "REVIEW_REQUIRED"
+    assert result.acceptance_blocked
+    assert any(
+        p.code == "FOOD_EVIDENCE_BINDING_MISMATCH"
+        and p.subject_ref.parts == ("R02", "v1", "c02")
+        for p in result.problems
+    )
+
+
+def test_pantry_source_subject_cannot_be_used_for_different_package_id() -> None:
+    request, resolution, cart, sources = prepare()
+    allocations = [
+        replace(a, pantry_item_id="P99") if a.pantry_item_id == "P01" else a
+        for a in resolution.pantry_allocations
+    ]
+    result = evaluator()(
+        request, replace(resolution, pantry_allocations=allocations), cart.lines, sources, AS_OF
+    )
+    assert result.meal_allergen_status == "REVIEW_REQUIRED"
+    assert result.acceptance_blocked
+    assert any(
+        p.code == "FOOD_EVIDENCE_BINDING_MISMATCH"
+        and p.subject_ref.parts == ("REQ-001", "P01")
+        and p.severity == "BLOCKER"
+        for p in result.problems
+    )
