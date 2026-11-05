@@ -55,6 +55,19 @@ Prioritize scenario-driven correctness and security, not raw unit test count. Ma
 - AI/API: malformed output, hallucinated SKU/price, implicit “accept”, unsupported custom individual meal, provider timeout, prompt injection, HTTP wrong revision and cross-session access.
 - Candidate search: no more than C01/C02/C03, no repeated candidates, original SKU preserved as C01 before alternatives, no false global-infeasible claim.
 
+## Additional contract and adversarial acceptance tests (design gates)
+
+Before Task 6–8 is declared ready, add precise scenario or contract tests for:
+- **Forged identity/revisions:** create/patch cannot set arbitrary `request_id`, `cart_id`, `conversation_revision`, `verification_basis`, source revisions or ACCEPTED state. Trusted service owns these fields and enforces schema allowlisting.
+- **Forged time:** client-supplied `as_of`, old source timestamps or time-zone offsets cannot bypass expiry; deterministic test clock is internal, not an API input.
+- **Store change:** store selection persists with the effective request; omitted field in a follow-up retains current store; explicit store change invalidates old draft and requires same-store re-verification; no mixed-store lines.
+- **Cross-session data isolation:** another owner cannot GET/PATCH/ACCEPT/DELETE the first owner's draft; for local-only mode ensure no unauthenticated network exposure. Authentication design remains a separate pre-public-release gate.
+- **Duplicate/concurrent accept:** two simultaneous requests with the same revision never produce two accepted transitions or checkout side effects; old request revision cannot race a material edit.
+- **Stale read:** GET itself stays read-only yet exposes that price/stock are no longer current; accept at the same instant blocks/refreshes even if UI previously displayed VERIFIED.
+- **Release boundary:** no order/payment/stock reservation endpoint or “medically safe” claim emerges from success path.
+
+Do not claim these pass without real test identifiers, command output and execution records.
+
 ## Executable CI gates (proposed stack)
 
 ~~~bash
