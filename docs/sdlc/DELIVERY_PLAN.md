@@ -1,6 +1,6 @@
 # SDLC Delivery Plan, Change Control and Stage Gates
 
-**Version:** 0.1 | **Status:** DRAFT planning, not an implementation authorization. Implementation source: [existing Superpowers Task 1–9 plan](../superpowers/plans/2026-11-04-uc01-first-vertical-slice.md) on open PR #4.
+**Version:** 0.1 | **Status:** DRAFT planning, not an implementation authorization. Implementation source: [existing Superpowers Task 1–9 plan](https://github.com/hungtvb/mealmate/pull/4) on open PR #4.
 
 ## Delivery model and task granularity
 
