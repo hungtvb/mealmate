@@ -215,6 +215,10 @@ def search_candidates(
         if cart.cart_verification_status == "VERIFIED":
             had_economic_verified = True
             allergy = assess_allergens(request, resolution, cart.lines, evidence, as_of)
+            # Keep the draft's displayed meal status consistent with the
+            # separately computed evidence gate. This is NOT acceptance and
+            # does not replace Task 7's revision/approval validation.
+            cart = cart.model_copy(update={"meal_allergen_status": allergy.meal_allergen_status})
         attempt = CandidateAttempt(
             candidate_id=f"C{revision:02d}", candidate=candidate,
             cart=cart, allergy=allergy,
