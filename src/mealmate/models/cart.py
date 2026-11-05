@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import Field
 
 from .meal import SourceModel, PlannedDish
+from .catalog import FoodSubjectRef
 
 
 class CartLine(SourceModel):
@@ -16,6 +17,7 @@ class CartLine(SourceModel):
     unit: Literal["g", "ml", "pcs"]
     unused_qty: Decimal = Field(ge=0)
     sku: str
+    food_subject_ref: FoodSubjectRef
     packs: int = Field(gt=0)
     price_per_pack_vnd: int = Field(ge=0)
     line_total_vnd: int = Field(ge=0)

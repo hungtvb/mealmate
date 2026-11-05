@@ -208,6 +208,7 @@ def build_cart(
                 unit=sku.pack_unit,
                 unused_qty=Decimal(packs) * sku.pack_quantity - need.buy_qty,
                 sku=sku.sku,
+                food_subject_ref=sku.food_evidence_ref,
                 packs=packs,
                 price_per_pack_vnd=sku.price_vnd_per_pack,
                 line_total_vnd=line_total,
